@@ -57,7 +57,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
     event Harvest(address indexed harvester);
     event SetVault(address indexed newVault);
     event SetStrategist(address indexed newStrategist);
-    event SetGrimFeeRecipient(address indexed newRecipient);
+    event SetFeeRecipient(address indexed newRecipient);
     event SetFeeToken(address indexed newFeeToken);
     event RetireStrat(address indexed caller);
     event Panic(address indexed caller);
@@ -74,7 +74,6 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
         IEqualizerRouter.Routes[] memory _equalToMpxPath,
         IEqualizerRouter.Routes[] memory _feeTokenPath
     ) {
-        strategist = msg.sender;
         asset = _asset;
         gauge = _gauge;
         router = _router;
@@ -99,7 +98,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
         
     }
 
-    /** @dev Function to synchronize balances before new user deposit. Can be overridden in the strategy. */
+    /** @dev Function to synchronize balances before new user deposit.*/
     function afterDeposit() external whenNotPaused {
         if(msg.sender != vault){revert NotVault();}
             _harvest(tx.origin);
@@ -109,7 +108,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
     function deposit() public whenNotPaused {
         if(msg.sender != vault){revert NotVault();}
         
-        if (balanceOfPool() == 0 || harvestOnDeposit == 0) {
+        if (balanceOfPool() == 0) {
             _deposit();
         } else {
             _deposit();
@@ -142,7 +141,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
 
     function harvest() external {
         if(msg.sender != tx.origin){revert NotEOA();}
-        if(lastHarvest < uint64(block.timestamp + 300)){revert UnderTimeLock();}
+        if(lastHarvest < uint64(block.timestamp + 600)){revert UnderTimeLock();}
         _harvest(msg.sender);
     }
 
@@ -166,7 +165,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
 
     /** @dev This function converts all funds to WFTM, charges fees and sends fees to respective accounts */
     function _chargeFees(address caller) internal {                   
-       uint256 toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE / FEE_DIVISOR;
+       uint256 toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
 
         if(feeToken != equal){
         IEqualizerRouter(router).swapExactTokensForTokens(toFee, 0, feeTokenPath, address(this), block.timestamp);                          
@@ -202,7 +201,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
         if (outputBal > 0) {
             (wrappedOut,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
         } 
-        return wrappedOut * PLATFORM_FEE / FEE_DIVISOR * CALL_FEE / FEE_DIVISOR;
+        return wrappedOut * PLATFORM_FEE >> FEE_DIVISOR * CALL_FEE >> FEE_DIVISOR;
     }
 
     // returns rewards unharvested
@@ -312,12 +311,13 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
     }
 
     // Sets the grimFeeRecipient address
-    function setGrimFeeRecipient(address _feeRecipient) external onlyAdmin {
+    function setFeeRecipient(address _feeRecipient) external onlyAdmin {
         feeRecipient = _feeRecipient;
-        emit SetGrimFeeRecipient(_feeRecipient);
+        emit SetFeeRecipient(_feeRecipient);
     }
 
    function setFeeToken(address _feeToken, IEqualizerRouter.Routes[] memory _feeTokenPath) external onlyAdmin {
+    if(_feeToken == address(0) || _feeTokenPath.length == 0){revert InvalidTokenOrPath();}
     feeToken = _feeToken;
     delete feeTokenPath;
 
@@ -332,6 +332,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
 
     // Sets harvestOnDeposit
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
+        require(_harvestOnDeposit == 0 || _harvestOnDeposit == 1);
         harvestOnDeposit = _harvestOnDeposit;
     } 
 

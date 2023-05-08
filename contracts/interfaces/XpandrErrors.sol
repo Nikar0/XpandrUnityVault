@@ -5,14 +5,12 @@ contract XpandrErrors {
     error ZeroAmount();
     error NotVault();
     error NotEOA();
-    error NoAuth();
     error NotAccountOwner();
     error InvalidProposal();
     error OverMaxFee();
     error OverFeeDiv();
-    error NoShares();
     error OverBalance();
     error ZeroAddress();
     error UnderTimeLock();
-    error InvalidToken();
+    error InvalidTokenOrPath();
 }

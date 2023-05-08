@@ -2,11 +2,11 @@
 
 pragma solidity 0.8.17;
 
+import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 import "./interfaces/solmate/ERC20.sol";
 import "./interfaces/solmate/SafeTransferLib.sol";
-import "@openzeppelin/contracts/utils/Address.sol";
 import "./interfaces/AdminOwned.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
 import "./interfaces/IEqualizerRouter.sol";
 import "./interfaces/IEqualizerGauge.sol";
 import "./interfaces/XpandrErrors.sol";

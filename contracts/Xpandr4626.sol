@@ -48,16 +48,17 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
      This token is minted when someone deposits. It's burned in order
      to withdraw the corresponding portion of the underlying assets.
      */
-    constructor (ERC20 _asset)
+    constructor (ERC20 _asset, IStrategy _strategy)
        ERC4626(
             // Underlying token
             _asset,
             // ex: Rari Dai Stablecoin Vault
-            string(abi.encodePacked("Xpandr ", _asset.name(), " Vault")),
+            string(abi.encodePacked("Xpandr4626 Vault")),
             // ex: rvDAI
-            string(abi.encodePacked("Xp-", _asset.symbol()))
+            string(abi.encodePacked("Xp-MPX-FTM"))
         )
     {
+        strategy = _strategy;
         totalSupply = type(uint256).max;
     }
 

@@ -1,5 +1,13 @@
 //SPDX-License-Identifier: MIT
 
+/** 
+@title Xpandr4626
+@author Nikar0 
+@notice Minimal Vault based on EIP 4626
+
+www.github.com/nikar0/Xpandr4626 - www.twitter.com/Nikar0_
+**/
+
 pragma solidity 0.8.17;
 
 
@@ -32,9 +40,10 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
     IStrategy public strategy;
     // The minimum time it has to pass before a strat candidate can be approved, set to 24 hours
     uint256 accumulatedYield;
-    uint128 constant approvalDelay = 43200; // 12h
+    uint256 constant approvalDelay = 43200; // 12h
+    mapping(address => uint64) lastUserDeposit;
   
-    event Deposit(address indexed caller, uint256 indexed assets, uint256 indexed shares); 
+    //event Deposit(address indexed caller, uint256 indexed assets, uint256 indexed shares); 
     event NewStratQueued(address implementation);
     event SwapStrat(address implementation);
     event InCaseTokensGetStuck(address caller, uint256 amount, address token);
@@ -81,18 +90,21 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
 
     
   //Entrypoint of funds into the system. The vault then deposits funds into the strategy.  
-     function deposit(uint256 assets, address receiver) public virtual override nonReentrant() returns (uint256 shares) {
+     function deposit(uint256 lpAmt, address receiver) public virtual override nonReentrant() returns (uint256 shares) {
+        if(lastUserDeposit[msg.sender] == 0){lastUserDeposit[msg.sender] = uint64(block.timestamp);} 
+        else if(lastUserDeposit[msg.sender] < uint64(block.timestamp + 600)) {revert UnderTimeLock();}
         if(msg.sender != receiver){revert NotAccountOwner();}
-        if((shares = previewDeposit(assets)) == 0){revert ZeroAmount();}
-        shares = previewDeposit(assets);
+
+        shares = previewDeposit(lpAmt);
+        if(shares  == 0){revert ZeroAmount();}
 
         // Need to transfer before minting or ERC777s could reenter.
-        asset.safeTransferFrom(msg.sender, address(this), assets);
+        asset.safeTransferFrom(msg.sender, address(this), lpAmt);
         _earn();
         
         _mint(msg.sender, shares);
+        emit Deposit(msg.sender, receiver, lpAmt, shares);
 
-        emit Deposit(msg.sender, assets, shares);
         if(strategy.harvestOnDeposit() == 1) {strategy.afterDeposit();}
     }
 
@@ -118,13 +130,18 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
      tokens are burned in the process.
      */
 
-    function withdraw(uint256 assets, address receiver, address owner) public virtual override nonReentrant returns (uint256 shares) {
+    function withdraw(uint256 lpAmt, address receiver, address owner) public virtual override nonReentrant returns (uint256 shares) {
         if(msg.sender != receiver && msg.sender != owner){revert NotAccountOwner();}
-        shares = previewWithdraw(assets);
-        if(assets > asset.balanceOf(msg.sender)){revert OverBalance();}
-        if(assets == 0 || shares == 0){revert ZeroAmount();}
-        strategy.withdraw(shares);
-        return shares;
+        if(lpAmt > asset.balanceOf(msg.sender)){revert OverBalance();}
+        shares = previewWithdraw(lpAmt);
+        if(lpAmt == 0 || shares == 0){revert ZeroAmount();}
+       
+        strategy.withdraw(lpAmt);
+        _burn(owner, shares);
+
+        asset.safeTransfer(receiver, lpAmt);
+
+        emit Withdraw(msg.sender, receiver, owner, lpAmt, shares);
     }
 
     /** 
@@ -164,7 +181,7 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
     
     //Rescues random funds stuck that the strat can't handle.
     function inCaseTokensGetStuck(address _token) external onlyAdmin {
-        if(ERC20(_token) == asset){revert InvalidToken();}
+        if(ERC20(_token) == asset){revert InvalidTokenOrPath();}
 
         uint256 amount = ERC20(_token).balanceOf(address(this));
         ERC20(_token).safeTransfer(msg.sender, amount);

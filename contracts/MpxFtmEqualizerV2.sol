@@ -180,7 +180,9 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
         uint256 t1Bal = ERC20(wftm).balanceOf(address(this));
         uint256 t2Bal = ERC20(mpx).balanceOf(address(this));
 
-        IEqualizerRouter(router).addLiquidity(wftm, mpx, stable, t1Bal, t2Bal, 1, 1, address(this), uint64(block.timestamp));
+        uint256 liquidity;
+        (,,liquidity) = IEqualizerRouter(router).addLiquidity(wftm, mpx, stable, t1Bal, t2Bal, 1, 1, address(this), uint64(block.timestamp));
+        profit = profit + liquidity;    
     }
 
 

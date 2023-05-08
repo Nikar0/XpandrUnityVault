@@ -108,7 +108,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
     /** @dev Deposits funds into the masterchef */
     function deposit() public whenNotPaused {
         if(msg.sender != vault){revert NotVault();}
-        _deposit();}
+        _deposit();
     }
 
     function _deposit() internal whenNotPaused {
@@ -163,17 +163,12 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
     function _chargeFees(address caller) internal {                   
        uint256 toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
 
-        if(feeToken != equal){
-        IEqualizerRouter(router).swapExactTokensForTokens(toFee, 0, feeTokenPath, address(this), block.timestamp);                          
-        }
+        if(feeToken != equal){IEqualizerRouter(router).swapExactTokensForTokens(toFee, 0, feeTokenPath, address(this), block.timestamp);}
     
         uint256 feeBal = ERC20(feeToken).balanceOf(address(this));   
 
-        if(feeToken == equal){
-        _distroRewardFee(feeBal, caller);
-        } else {
-        _distroFee(feeBal, caller);
-        }
+        if(feeToken == equal){ _distroRewardFee(feeBal, caller);
+        } else {_distroFee(feeBal, caller);}
     }
 
     /** @dev Converts WMFTM to both sides of the LP token and builds the liquidity pair */
@@ -313,18 +308,18 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
     }
 
    function setFeeToken(address _feeToken, IEqualizerRouter.Routes[] memory _feeTokenPath) external onlyAdmin {
-    if(_feeToken == address(0) || _feeTokenPath.length == 0){revert InvalidTokenOrPath();}
-    feeToken = _feeToken;
-    delete feeTokenPath;
+       if(_feeToken == address(0) || _feeTokenPath.length == 0){revert InvalidTokenOrPath();}
+       feeToken = _feeToken;
+       delete feeTokenPath;
 
-    for (uint i; i < _feeTokenPath.length; ++i) {
-        feeTokenPath.push(_feeTokenPath[i]);
+       for (uint i; i < _feeTokenPath.length; ++i) {
+           feeTokenPath.push(_feeTokenPath[i]);
+       }
+
+       ERC20(_feeToken).safeApprove(router, 0);
+       ERC20(_feeToken).safeApprove(router, type(uint).max);
+       emit SetFeeToken(_feeToken);
     }
-
-    ERC20(_feeToken).safeApprove(router, 0);
-    ERC20(_feeToken).safeApprove(router, type(uint).max);
-    emit SetFeeToken(_feeToken);
-   }
 
     // Sets harvestOnDeposit
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {

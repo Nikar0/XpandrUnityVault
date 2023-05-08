@@ -158,12 +158,11 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
 
         emit Harvest(caller);
     }
-
     /** @dev This function converts all funds to WFTM, charges fees and sends fees to respective accounts */
     function _chargeFees(address caller) internal {                   
        uint256 toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
 
-        if(feeToken != equal){IEqualizerRouter(router).swapExactTokensForTokens(toFee, 0, feeTokenPath, address(this), block.timestamp);}
+        if(feeToken != equal){IEqualizerRouter(router).swapExactTokensForTokens(toFee, 0, feeTokenPath, address(this), uint64(block.timestamp));}
     
         uint256 feeBal = ERC20(feeToken).balanceOf(address(this));   
 
@@ -175,13 +174,13 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
     function _addLiquidity() internal {
         uint256 equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
 
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToWftmPath, address(this), block.timestamp);
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToMpxPath, address(this), block.timestamp);
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToWftmPath, address(this), uint64(block.timestamp));
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToMpxPath, address(this), uint64(block.timestamp));
 
         uint256 t1Bal = ERC20(wftm).balanceOf(address(this));
         uint256 t2Bal = ERC20(mpx).balanceOf(address(this));
 
-        IEqualizerRouter(router).addLiquidity(wftm, mpx, stable, t1Bal, t2Bal, 1, 1, address(this), block.timestamp);
+        IEqualizerRouter(router).addLiquidity(wftm, mpx, stable, t1Bal, t2Bal, 1, 1, address(this), uint64(block.timestamp));
     }
 
 
@@ -275,7 +274,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
 
         ERC20(_tokens[0][0]).safeApprove(router, 0);
         ERC20(_tokens[0][0]).safeApprove(router, type(uint).max);
-        IEqualizerRouter(router).swapExactTokensForTokens(bal, 0, customPath, address(this), block.timestamp + 600);
+        IEqualizerRouter(router).swapExactTokensForTokens(bal, 0, customPath, address(this), uint64(block.timestamp + 600));
    
         emit MakeCustomTxn(_tokens[0][0], _tokens[0][_tokens.length - 1], bal);
     }
@@ -314,7 +313,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
 
        for (uint i; i < _feeTokenPath.length; ++i) {
            feeTokenPath.push(_feeTokenPath[i]);
-       }
+        }
 
        ERC20(_feeToken).safeApprove(router, 0);
        ERC20(_feeToken).safeApprove(router, type(uint).max);

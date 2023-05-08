@@ -201,11 +201,11 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
 
     /** @dev calculate the total underlying 'asset' held by the strat */
     function balanceOf() public view returns (uint256) {
-        return balanceOfAsset() + (balanceOfPool());
+        return balanceOfWant() + (balanceOfPool());
     }
 
     /** @dev it calculates how much 'asset' this contract holds */
-    function balanceOfAsset() public view returns (uint256) {
+    function balanceOfWant() public view returns (uint256) {
         return ERC20(asset).balanceOf(address(this));
     }
 
@@ -219,7 +219,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
         if(msg.sender != vault){revert NotVault();}
         _harvest(msg.sender);
         IEqualizerGauge(gauge).withdraw(balanceOfPool());
-        ERC20(asset).transfer(vault, balanceOfAsset());
+        ERC20(asset).transfer(vault, balanceOfWant());
 
         emit RetireStrat(msg.sender);
     }

@@ -41,6 +41,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
 
     // Controllers
     bool public constant stable = false;
+    uint256 public profit;
     uint8 public harvestOnDeposit;
     uint64 internal lastHarvest;
 
@@ -98,7 +99,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
         
     }
 
-    /** @dev Function to synchronize balances before new user deposit.*/
+    //Called by vault if harvestOnDeposit = 1
     function afterDeposit() external whenNotPaused {
         if(msg.sender != vault){revert NotVault();}
             _harvest(tx.origin);
@@ -107,13 +108,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
     /** @dev Deposits funds into the masterchef */
     function deposit() public whenNotPaused {
         if(msg.sender != vault){revert NotVault();}
-        
-        if (balanceOfPool() == 0) {
-            _deposit();
-        } else {
-            _deposit();
-            _harvest(msg.sender);
-        }
+        _deposit();}
     }
 
     function _deposit() internal whenNotPaused {
@@ -153,6 +148,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
 
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
         uint256 outputBal = ERC20(equal).balanceOf(address(this));
+        profit = profit + outputBal;
 
         if (outputBal > 0 ) {
             _chargeFees(caller);

@@ -63,12 +63,15 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
         totalSupply = type(uint256).max;
     }
 
+    /*//////////////////////////////////////////////////////////////
+                          DEPOSIT/WITHDRAW
+    //////////////////////////////////////////////////////////////*/
     function depositAll() external {
         deposit(asset.balanceOf(msg.sender), msg.sender);
     }
 
     //Entrypoint of funds into the system. The vault then deposits funds into the strategy.  
-     function deposit(uint256 lpAmt, address receiver) public virtual override nonReentrant() returns (uint256 shares) {
+    function deposit(uint256 lpAmt, address receiver) public virtual override nonReentrant() returns (uint256 shares) {
         if (lastUserDeposit[msg.sender] == 0) {lastUserDeposit[msg.sender] = uint64(block.timestamp);} 
         if (lastUserDeposit[msg.sender] < uint64(block.timestamp) + 600) {revert UnderTimeLock();}
         if(tx.origin != receiver){revert NotAccountOwner();}
@@ -85,17 +88,14 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
         if(strategy.harvestOnDeposit() == 1) {strategy.afterDeposit();}
     }
 
-    
     //Function to send funds into the strategy and put them to work.
     //It's primarily called by the vault's deposit() function.
     function _earn() internal {
-        uint _bal = available();
+        uint _bal = idleFunds();
         asset.safeTransfer(address(strategy), _bal);
         strategy.deposit();
     }
 
-    
-    //Helper to call withdraw with all the sender's funds.
     function withdrawAll() external {
         withdraw(asset.balanceOf(msg.sender), msg.sender, msg.sender);
     }
@@ -120,10 +120,35 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
         emit Withdraw(msg.sender, receiver, owner, lpAmt, shares);
     }
 
-    /** 
-     * @dev Sets the candidate for the new strat to use with this vault.
-     * @param _implementation The address of the candidate strategy.  
-     */
+    /*//////////////////////////////////////////////////////////////
+                              VIEWS
+    //////////////////////////////////////////////////////////////*/
+    function want() public view returns (ERC20) {
+        return asset;
+    }
+
+    //Returns idle funds in the vault
+    function idleFunds() public view returns (uint256) {
+        return asset.balanceOf(address(this));
+    }
+
+    //Function for UIs to display the current value of 1 vault share
+    function getPricePerFullShare() public view returns (uint256) {
+        return totalSupply == 0 ? 1e18 : totalAssets() * 1e18 / totalSupply;
+    }
+
+    
+    //Calculates total amount of 'asset' held by the system. Vault, strategy and contracts it deposits in.
+    
+    function totalAssets() public view override returns (uint256) {
+        return asset.balanceOf(address(this)) + IStrategy(strategy).balanceOf();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            ADMIN FUNCTIONS 
+    //////////////////////////////////////////////////////////////*/
+    
+    //Sets the candidate for the new strat to use with this vault.
     function queueStrat(address _implementation) public onlyAdmin {
         if(address(this) != IStrategy(_implementation).vault()){revert InvalidProposal();}
         stratCandidate = StratCandidate({
@@ -135,11 +160,10 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
     }
 
     /** 
-     * @dev It switches the active strat for the strat candidate. After upgrading, the 
-     * candidate implementation is set to the 0x00 address, and proposedTime to a time 
-     * happening in +100 years for safety. 
-     */
-
+    Switches the active strat for the strat candidate. After upgrading, the 
+    candidate implementation is set to the 0x00 address, and proposedTime to a time 
+    happening in +100 years for safety. 
+    */
     function swapStrat() public onlyAdmin {
         if(stratCandidate.implementation == address(0)){revert ZeroAddress();}
         if(stratCandidate.proposedTime + approvalDelay > uint64(block.timestamp)){revert UnderTimeLock();}
@@ -153,7 +177,6 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
         _earn();
     }
 
-    
     //Rescues random funds stuck that the strat can't handle.
     function inCaseTokensGetStuck(address _token) external onlyAdmin {
         if(ERC20(_token) == asset){revert InvalidTokenOrPath();}
@@ -164,33 +187,12 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
         emit InCaseTokensGetStuck(msg.sender, amount, _token);
     }
 
-    /**@dev VIEWS **/
-    function want() public view returns (ERC20) {
-        return asset;
-    }
-
-    //Returns idle funds in the vault
-    function available() public view returns (uint256) {
-        return asset.balanceOf(address(this));
-    }
-
-    //Function for various UIs to display the current value of one of our yield tokens.
-    //Returns uint256 with 18 decimals of how much underlying asset one vault share represents.
-    function getPricePerFullShare() public view returns (uint256) {
-        return totalSupply == 0 ? 1e18 : totalAssets() * 1e18 / totalSupply;
-    }
-
-    /**
-     Calculates total underlying value of want held by the system.
-     It takes into account vault contract balance, strategy contract balance
-     & balance deployed in other contracts as part of the strategy.
-     */
-    function totalAssets() public view override returns (uint256) {
-        return asset.balanceOf(address(this)) + IStrategy(strategy).balanceOf();
-    }
-
+    /*//////////////////////////////////////////////////////////////
+                               UNUSED
+    //////////////////////////////////////////////////////////////*/
+    
     /**Following functions are included as per EIP-4626 standard but are not meant
-    To be used in the context of this vault. As such, they were made uncallable by design.
+    To be used in the context of this vault. As such, they were made void by design.
     This vault does not allow 3rd parties to deposit or withdraw for another Owner.
     */
     function redeem(uint256 shares, address receiver, address owner) public virtual override returns (uint256 assets) {}

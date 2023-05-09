@@ -101,7 +101,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
     }
 
     /*//////////////////////////////////////////////////////////////
-                          USER FUNCTIONS
+                          DEPOSIT/WITHDRAW
     //////////////////////////////////////////////////////////////*/
     function deposit() public whenNotPaused {
         if(msg.sender != vault){revert NotVault();}

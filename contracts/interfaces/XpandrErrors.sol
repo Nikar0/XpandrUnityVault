@@ -13,4 +13,5 @@ contract XpandrErrors {
     error ZeroAddress();
     error UnderTimeLock();
     error InvalidTokenOrPath();
+    error UnusedFunction();
 }

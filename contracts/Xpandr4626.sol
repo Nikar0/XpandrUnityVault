@@ -70,9 +70,9 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
     //Entrypoint of funds into the system. The vault then deposits funds into the strategy.  
      function deposit(uint256 lpAmt, address receiver) public virtual override nonReentrant() returns (uint256 shares) {
         if (lastUserDeposit[msg.sender] == 0) {lastUserDeposit[msg.sender] = uint64(block.timestamp);} 
-        else if (uint64(block.timestamp - lastUserDeposit[msg.sender]) < 600) {revert UnderTimeLock();}
+        if (uint64(block.timestamp - lastUserDeposit[msg.sender]) < 600) {revert UnderTimeLock();}
         if(tx.origin != receiver){revert NotAccountOwner();}
-
+        vaultProfit = vaultProfit + strategy.harvestProfit();
         shares = previewDeposit(lpAmt);
         if(shares == 0){revert ZeroAmount();}
 
@@ -144,8 +144,6 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
         if(stratCandidate.implementation == address(0)){revert ZeroAddress();}
         if(stratCandidate.proposedTime + approvalDelay > uint64(block.timestamp)){revert UnderTimeLock();}
 
-        vaultProfit = vaultProfit + strategy.profit();
-
         emit SwapStrat(stratCandidate.implementation);
         strategy.retireStrat();
         strategy = IStrategy(stratCandidate.implementation);
@@ -187,8 +185,16 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
      It takes into account vault contract balance, strategy contract balance
      & balance deployed in other contracts as part of the strategy.
      */
-     function totalAssets() public view override returns (uint256) {
+    function totalAssets() public view override returns (uint256) {
         return asset.balanceOf(address(this)) + IStrategy(strategy).balanceOf();
     }
 
+    /**Following functions are included as per EIP-4626 standard but are not meant
+    To be used in the context of this vault. As such, they were made uncallable by design.
+    This vault does not allow 3rd parties to deposit or withdraw for another Owner.
+    */
+    function redeem(uint256 shares, address receiver, address owner) public virtual override returns (uint256 assets) {}
+    function mint(uint256 shares, address receiver) public virtual override returns (uint256 assets) {}
+    function previewMint(uint256 shares) public view virtual override returns (uint256 _mint){}
+    function maxRedeem(address owner) public view virtual override returns (uint256 _redeem) {}
 }

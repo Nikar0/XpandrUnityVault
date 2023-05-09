@@ -54,9 +54,9 @@ abstract contract ERC4626 is ERC20 {
 
         emit Deposit(msg.sender, receiver, assets, shares);
 
-        afterDeposit(assets, shares);
+        //afterDeposit(assets, shares);
     }
-
+/*
     function mint(uint256 shares, address receiver) public virtual returns (uint256 assets) {
         assets = previewMint(shares); // No need to check for rounding error, previewMint rounds up.
 
@@ -69,7 +69,7 @@ abstract contract ERC4626 is ERC20 {
 
         afterDeposit(assets, shares);
     }
-
+*/
     function withdraw(
         uint256 assets,
         address receiver,
@@ -83,7 +83,7 @@ abstract contract ERC4626 is ERC20 {
             if (allowed != type(uint256).max) allowance[owner][msg.sender] = allowed - shares;
         }
 
-        beforeWithdraw(assets, shares);
+        //beforeWithdraw(assets, shares);
 
         _burn(owner, shares);
 
@@ -91,7 +91,7 @@ abstract contract ERC4626 is ERC20 {
 
         asset.safeTransfer(receiver, assets);
     }
-
+    /*
     function redeem(
         uint256 shares,
         address receiver,
@@ -114,7 +114,7 @@ abstract contract ERC4626 is ERC20 {
 
         asset.safeTransfer(receiver, assets);
     }
-
+    */
     /*//////////////////////////////////////////////////////////////
                             ACCOUNTING LOGIC
     //////////////////////////////////////////////////////////////*/
@@ -136,27 +136,28 @@ abstract contract ERC4626 is ERC20 {
     function previewDeposit(uint256 assets) public view virtual returns (uint256) {
         return convertToShares(assets);
     }
-
+   /*
     function previewMint(uint256 shares) public view virtual returns (uint256) {
         uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
 
         return supply == 0 ? shares : shares.mulDivUp(totalAssets(), supply);
     }
-
+    */
     function previewWithdraw(uint256 assets) public view virtual returns (uint256) {
         uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
 
         return supply == 0 ? assets : assets.mulDivUp(supply, totalAssets());
     }
-
+    /*
     function previewRedeem(uint256 shares) public view virtual returns (uint256) {
         return convertToAssets(shares);
     }
+    */
 
     /*//////////////////////////////////////////////////////////////
                      DEPOSIT/WITHDRAWAL LIMIT LOGIC
     //////////////////////////////////////////////////////////////*/
-
+    /*
     function maxDeposit(address) public view virtual returns (uint256) {
         return type(uint256).max;
     }
@@ -172,12 +173,13 @@ abstract contract ERC4626 is ERC20 {
     function maxRedeem(address owner) public view virtual returns (uint256) {
         return balanceOf[owner];
     }
-
+    */
     /*//////////////////////////////////////////////////////////////
                           INTERNAL HOOKS LOGIC
     //////////////////////////////////////////////////////////////*/
-
+   /*
     function beforeWithdraw(uint256 assets, uint256 shares) internal virtual {}
 
     function afterDeposit(uint256 assets, uint256 shares) internal virtual {}
+    */
 }

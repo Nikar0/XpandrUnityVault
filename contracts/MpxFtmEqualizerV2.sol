@@ -296,7 +296,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
         emit SetVault(_vault);
     }
 
-    // Sets the grimFeeRecipient address
+    // Sets the feeRecipient address
     function setFeeRecipient(address _feeRecipient) external onlyAdmin {
         feeRecipient = _feeRecipient;
         emit SetFeeRecipient(_feeRecipient);

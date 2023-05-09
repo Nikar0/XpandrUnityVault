@@ -73,19 +73,19 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
     }
 
     //Entrypoint of funds into the system. The vault then deposits funds into the strategy.  
-    function deposit(uint256 lpAmt, address receiver) public virtual override nonReentrant() returns (uint256 shares) {
+    function deposit(uint256 assets, address receiver) public virtual override nonReentrant() returns (uint256 shares) {
         if (lastUserDeposit[msg.sender] == 0) {lastUserDeposit[msg.sender] = uint64(block.timestamp);} 
         if (lastUserDeposit[msg.sender] < uint64(block.timestamp) + 600) {revert UnderTimeLock();}
         if(tx.origin != receiver){revert NotAccountOwner();}
         vaultProfit = vaultProfit + strategy.harvestProfit();
-        shares = previewDeposit(lpAmt);
+        shares = previewDeposit(assets);
         if(shares == 0){revert ZeroAmount();}
 
-        asset.safeTransferFrom(msg.sender, address(this), lpAmt); // Need to transfer before minting or ERC777s could reenter.
+        asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
         _earn();
         
         _mint(msg.sender, shares);
-        emit Deposit(msg.sender, receiver, lpAmt, shares);
+        emit Deposit(msg.sender, receiver, assets, shares);
 
         if(strategy.harvestOnDeposit() == 1) {strategy.afterDeposit();}
     }
@@ -108,18 +108,18 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
      tokens are burned in the process.
      */
 
-    function withdraw(uint256 lpAmt, address receiver, address owner) public virtual override nonReentrant returns (uint256 shares) {
+    function withdraw(uint256 assets, address receiver, address owner) public virtual override nonReentrant returns (uint256 shares) {
         if(msg.sender != receiver && msg.sender != owner){revert NotAccountOwner();}
-        if(lpAmt > asset.balanceOf(msg.sender)){revert OverBalance();}
-        shares = previewWithdraw(lpAmt);
-        if(lpAmt == 0 || shares == 0){revert ZeroAmount();}
+        if(assets > asset.balanceOf(msg.sender)){revert OverBalance();}
+        shares = previewWithdraw(assets);
+        if(assets == 0 || shares == 0){revert ZeroAmount();}
        
-        strategy.withdraw(lpAmt);
+        strategy.withdraw(assets);
         _burn(owner, shares);
 
-        asset.safeTransfer(receiver, lpAmt);
+        asset.safeTransfer(receiver, assets);
 
-        emit Withdraw(msg.sender, receiver, owner, lpAmt, shares);
+        emit Withdraw(msg.sender, receiver, owner, assets, shares);
     }
 
     /*//////////////////////////////////////////////////////////////

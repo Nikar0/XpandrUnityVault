@@ -28,7 +28,9 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint256;
 
-    //VARIABLES & EVENTS\\
+    /*//////////////////////////////////////////////////////////////
+                           VARIABLES & EVENTS
+    //////////////////////////////////////////////////////////////*/
     struct StratCandidate {
         address implementation;
         uint256 proposedTime;
@@ -42,7 +44,7 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
   
     event NewStratQueued(address implementation);
     event SwapStrat(address implementation);
-    event InCaseTokensGetStuck(address caller, uint256 amount, address token);
+    event StuckTokens(address caller, uint256 amount, address token);
 
     /**
      Initializes the vault and it's own receipt token
@@ -178,13 +180,13 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
     }
 
     //Rescues random funds stuck that the strat can't handle.
-    function inCaseTokensGetStuck(address _token) external onlyAdmin {
+    function stuckTokens(address _token) external onlyAdmin {
         if(ERC20(_token) == asset){revert InvalidTokenOrPath();}
 
         uint256 amount = ERC20(_token).balanceOf(address(this));
         ERC20(_token).safeTransfer(msg.sender, amount);
 
-        emit InCaseTokensGetStuck(msg.sender, amount, _token);
+        emit StuckTokens(msg.sender, amount, _token);
     }
 
     /*//////////////////////////////////////////////////////////////

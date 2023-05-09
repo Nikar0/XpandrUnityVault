@@ -110,7 +110,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
 
     function _deposit() internal whenNotPaused {
         uint256 assetBal = ERC20(asset).balanceOf(address(this));
-        harvestProfit = 0;
+        if(msg.sender == vault){harvestProfit = 0;}
         IEqualizerGauge(gauge).deposit(assetBal);
     }
 

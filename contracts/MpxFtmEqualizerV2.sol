@@ -57,7 +57,6 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
     // Events
     event Harvest(address indexed harvester);
     event SetVault(address indexed newVault);
-    event SetStrategist(address indexed newStrategist);
     event SetFeeRecipient(address indexed newRecipient);
     event SetFeeToken(address indexed newFeeToken);
     event RetireStrat(address indexed caller);

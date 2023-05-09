@@ -127,9 +127,10 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
         if (assetBal > _amount) {
             assetBal = _amount;
         }
-
-        uint256 withdrawalFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR;
-        ERC20(asset).safeTransfer(vault, assetBal - withdrawalFeeAmount);
+        if(WITHDRAW_FEE > 0){
+            uint256 withdrawalFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR; 
+            ERC20(asset).safeTransfer(vault, assetBal - withdrawalFeeAmount);
+        } else {ERC20(asset).safeTransfer(vault, assetBal);}
     }
 
     function harvest() external {

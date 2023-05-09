@@ -71,7 +71,7 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
      function deposit(uint256 lpAmt, address receiver) public virtual override nonReentrant() returns (uint256 shares) {
         if (lastUserDeposit[msg.sender] == 0) {lastUserDeposit[msg.sender] = uint64(block.timestamp);} 
         else if (uint64(block.timestamp - lastUserDeposit[msg.sender]) < 600) {revert UnderTimeLock();}
-        if(msg.sender != receiver){revert NotAccountOwner();}
+        if(tx.origin != receiver){revert NotAccountOwner();}
 
         shares = previewDeposit(lpAmt);
         if(shares == 0){revert ZeroAmount();}
@@ -189,22 +189,6 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
      */
      function totalAssets() public view override returns (uint256) {
         return asset.balanceOf(address(this)) + IStrategy(strategy).balanceOf();
-    }
-
-    function convertToAssets(uint256 shares) public view override returns (uint256) {
-        uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero
-        return supply == 0 ? shares : shares.mulDivDown(totalAssets(), supply);
-    }
-
-    function convertToShares(uint256 assets) public view virtual override returns (uint256) {
-        uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
-
-        return supply == 0 ? assets : assets.mulDivDown(supply, totalAssets());
-    }
-
-    function previewWithdraw(uint256 assets) public view override returns (uint256) {
-        uint256 supply = totalSupply;
-        return supply == 0 ? assets : assets.mulDivUp(supply, totalAssets());
     }
 
 }

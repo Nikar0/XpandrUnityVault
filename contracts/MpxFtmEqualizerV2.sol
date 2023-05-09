@@ -3,14 +3,12 @@
 pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/utils/Address.sol";
 import "./interfaces/solmate/ERC20.sol";
 import "./interfaces/solmate/SafeTransferLib.sol";
 import "./interfaces/AdminOwned.sol";
 import "./interfaces/IEqualizerRouter.sol";
 import "./interfaces/IEqualizerGauge.sol";
 import "./interfaces/XpandrErrors.sol";
-
 
 contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
     using SafeTransferLib for ERC20;
@@ -104,7 +102,6 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
             _harvest(tx.origin);
     }
 
-    /** @dev Deposits funds into the masterchef */
     function deposit() public whenNotPaused {
         if(msg.sender != vault){revert NotVault();}
         _deposit();
@@ -142,7 +139,7 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
     /** @dev Compounds the strategy's earnings and charges fees */
     function _harvest(address caller) internal whenNotPaused {
         if (caller != vault){
-            if(Address.isContract(msg.sender)){revert NotEOA();}
+            if(caller != tx.origin){revert NotEOA();}
         }
 
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
@@ -205,17 +202,17 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
         return balanceOfWant() + (balanceOfPool());
     }
 
-    /** @dev it calculates how much 'asset' this contract holds */
+    //Returns 'asset' balance this contract holds
     function balanceOfWant() public view returns (uint256) {
         return ERC20(asset).balanceOf(address(this));
     }
 
-    /** @dev it calculates how much 'asset' the strategy has working in the farm */
+    //Returns how much 'asset' the strategy has working in the farm
     function balanceOfPool() public view returns (uint256) {
         return IEqualizerGauge(gauge).balanceOf(address(this));
     }
 
-    /** @dev called as part of strat migration. Sends all the available funds back to the vault */
+    //Called as part of strat migration. Sends all available funds back to the vault
     function retireStrat() external {
         if(msg.sender != vault){revert NotVault();}
         _harvest(msg.sender);
@@ -225,20 +222,18 @@ contract MpxFtmEqualizerV2 is AdminOwned, Pausable, XpandrErrors {
         emit RetireStrat(msg.sender);
     }
 
-    /** @dev Pauses the strategy contract and executes the emergency withdraw function */
+    //Pauses the strategy contract & executes emergency withdraw
     function panic() external onlyAdmin {
         pause();
         IEqualizerGauge(gauge).withdraw(balanceOfPool());
         emit Panic(msg.sender);
     }
 
-    /** @dev Pauses the strategy contract */
     function pause() public onlyAdmin {
         _pause();
         _subAllowance();
     }
 
-    /** @dev Unpauses the strategy contract */
     function unpause() external onlyAdmin {
         _unpause();
         _addAllowance();

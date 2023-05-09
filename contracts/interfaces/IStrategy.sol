@@ -2,11 +2,11 @@
 
 pragma solidity 0.8.17;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./solmate/ERC20.sol";
 
 interface IStrategy { 
     function vault() external view returns (address);
-    function want() external view returns (IERC20);
+    function asset() external view returns (ERC20);
     function deposit() external;
     function afterDeposit() external;
     function withdraw(uint256) external;

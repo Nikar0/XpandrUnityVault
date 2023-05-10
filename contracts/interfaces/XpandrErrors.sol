@@ -3,6 +3,7 @@ pragma solidity 0.8.17;
 
 contract XpandrErrors {
     error ZeroAmount();
+    error NotOrigin();
     error NotVault();
     error NotEOA();
     error NotAccountOwner();

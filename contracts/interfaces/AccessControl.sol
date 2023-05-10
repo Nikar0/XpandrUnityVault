@@ -7,7 +7,7 @@ pragma solidity >=0.8.0 <=0.9.0;
 
  error NoAuth();
 
-abstract contract AdminOwned {
+abstract contract AccessControl {
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/

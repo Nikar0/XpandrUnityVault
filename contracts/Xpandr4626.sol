@@ -16,7 +16,7 @@ import {ERC20} from "./interfaces/solmate/ERC20.sol";
 import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
 import {FixedPointMathLib} from "./interfaces/solmate/FixedPointMathLib.sol";
 import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
-import {AdminOwned} from "./interfaces/AdminOwned.sol";
+import {AccessControl} from "./interfaces/AccessControl.sol";
 import {IStrategy} from "./interfaces/IStrategy.sol";
 
 
@@ -25,7 +25,7 @@ Implementation of a vault to deposit funds for yield optimizing
 This is the contract that receives funds & users interface with
 The strategy itself is implemented in a separate Strategy contract
  */
-contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard {
+contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint256;
 

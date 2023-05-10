@@ -193,8 +193,8 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard {
     To be used in the context of this vault. As such, they were made void by design.
     This vault does not allow 3rd parties to deposit or withdraw for another Owner.
     */
-    function redeem(uint256 shares, address receiver, address owner) public pure override returns (uint256 assets) {if(!false){revert XpandrErrors.UnusedFunction();}}
-    function mint(uint256 shares, address receiver) public pure override returns (uint256 assets) {if(!false){revert XpandrErrors.UnusedFunction();}}
-    function previewMint(uint256 shares) public pure override returns (uint256 _mint){if(!false){revert XpandrErrors.UnusedFunction();}}
-    function maxRedeem(address owner) public pure virtual override returns (uint256 _redeem) {if(!false){revert XpandrErrors.UnusedFunction();}}
+    function redeem(uint256 shares, address receiver, address owner) public pure override returns (uint256) {if(!false){revert XpandrErrors.UnusedFunction();}}
+    function mint(uint256 shares, address receiver) public pure override returns (uint256) {if(!false){revert XpandrErrors.UnusedFunction();}}
+    function previewMint(uint256 shares) public pure override returns (uint256){if(!false){revert XpandrErrors.UnusedFunction();}}
+    function maxRedeem(address owner) public pure override returns (uint256) {if(!false){revert XpandrErrors.UnusedFunction();}}
 }

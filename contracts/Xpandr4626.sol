@@ -73,14 +73,16 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard {
     //Entrypoint of funds into the system. The vault then deposits funds into the strategy.  
     function deposit(uint256 assets, address receiver) public virtual override nonReentrant() returns (uint256 shares) {
         if (lastUserDeposit[msg.sender] == 0) {lastUserDeposit[msg.sender] = uint64(block.timestamp);} 
-        if (lastUserDeposit[msg.sender] < uint64(block.timestamp) + 600) {revert XpandrErrors.UnderTimeLock();}
+        if (lastUserDeposit[msg.sender] < uint64(block.timestamp + 600)) {revert XpandrErrors.UnderTimeLock();}
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
-        vaultProfit = vaultProfit + strategy.harvestProfit();
+
         shares = previewDeposit(assets);
         if(shares == 0){revert XpandrErrors.ZeroAmount();}
 
         asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
         _earn();
+        vaultProfit = vaultProfit + strategy.harvestProfit();
+        lastUserDeposit[msg.sender] = uint64(block.timestamp);
         
         _mint(msg.sender, shares);
         emit Deposit(msg.sender, receiver, assets, shares);
@@ -107,7 +109,7 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard {
      */
 
     function withdraw(uint256 assets, address receiver, address owner) public virtual override nonReentrant returns (uint256 shares) {
-        if(msg.sender != receiver && msg.sender != owner){revert XpandrErrors.NotAccountOwner();}
+        if(msg.sender != owner && receiver != owner){revert XpandrErrors.NotAccountOwner();}
         if(assets > asset.balanceOf(msg.sender)){revert XpandrErrors.OverBalance();}
         shares = previewWithdraw(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}

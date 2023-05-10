@@ -71,7 +71,7 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard {
     }
 
     //Entrypoint of funds into the system. The vault then deposits funds into the strategy.  
-    function deposit(uint256 assets, address receiver) public virtual override nonReentrant() returns (uint256 shares) {
+    function deposit(uint256 assets, address receiver) public override nonReentrant() returns (uint256 shares) {
         if (lastUserDeposit[msg.sender] == 0) {lastUserDeposit[msg.sender] = uint64(block.timestamp);} 
         if (lastUserDeposit[msg.sender] < uint64(block.timestamp + 600)) {revert XpandrErrors.UnderTimeLock();}
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
@@ -108,7 +108,7 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard {
      tokens are burned in the process.
      */
 
-    function withdraw(uint256 assets, address receiver, address owner) public virtual override nonReentrant returns (uint256 shares) {
+    function withdraw(uint256 assets, address receiver, address owner) public override nonReentrant returns (uint256 shares) {
         if(msg.sender != owner && receiver != owner){revert XpandrErrors.NotAccountOwner();}
         if(assets > asset.balanceOf(msg.sender)){revert XpandrErrors.OverBalance();}
         shares = previewWithdraw(assets);
@@ -125,9 +125,6 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                               VIEWS
     //////////////////////////////////////////////////////////////*/
-    function want() public view returns (ERC20) {
-        return asset;
-    }
 
     //Returns idle funds in the vault
     function idleFunds() public view returns (uint256) {
@@ -196,8 +193,8 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard {
     To be used in the context of this vault. As such, they were made void by design.
     This vault does not allow 3rd parties to deposit or withdraw for another Owner.
     */
-    function redeem(uint256 shares, address receiver, address owner) public virtual override returns (uint256 assets) {}
-    function mint(uint256 shares, address receiver) public virtual override returns (uint256 assets) {}
-    function previewMint(uint256 shares) public view virtual override returns (uint256 _mint){}
-    function maxRedeem(address owner) public view virtual override returns (uint256 _redeem) {}
+    function redeem(uint256 shares, address receiver, address owner) public pure override returns (uint256 assets) {if(!false){revert XpandrErrors.UnusedFunction();}}
+    function mint(uint256 shares, address receiver) public pure override returns (uint256 assets) {if(!false){revert XpandrErrors.UnusedFunction();}}
+    function previewMint(uint256 shares) public pure override returns (uint256 _mint){if(!false){revert XpandrErrors.UnusedFunction();}}
+    function maxRedeem(address owner) public pure virtual override returns (uint256 _redeem) {if(!false){revert XpandrErrors.UnusedFunction();}}
 }

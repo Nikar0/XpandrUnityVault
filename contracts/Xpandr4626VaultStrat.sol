@@ -27,11 +27,14 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint256;
 
+    /*//////////////////////////////////////////////////////////////
+                            VARIABLES
+    //////////////////////////////////////////////////////////////*/
     // Tokens
     address public immutable wftm = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
     address public immutable equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
     address public immutable mpx = address(0x66eEd5FF1701E6ed8470DC391F05e27B1d0657eb);
-    address private constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75); //vaultProfit returns USDC value
+    address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75); //vaultProfit returns USDC value
     address public feeToken;
     address[] public rewardTokens;
 
@@ -40,8 +43,8 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     address public router;
 
     // Xpandr addresses
-    address public constant harvester = address(0xb8924595019aFB894150a9C7CBEc3362999b9f94);
-    address public treasury = address(0xfAE236b4E261278C2B84e74b4631cf7BCAFca06d);
+    address public constant harvester = address(0xDFAA88D5d068370689b082D34d7B546CbF393bA9);
+    address public constant treasury = address(0xE37058057B0751bD2653fdeB27e8218439e0f726);
     address public feeRecipient;
 
     //Routes
@@ -75,6 +78,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     event SetFeeRecipient(address indexed newRecipient);
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
     event SetFeeToken(address indexed newFeeToken);
+    event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[]);
     event Panic(address indexed caller);
     event MakeCustomTxn(address indexed from, address indexed to, uint256 indexed amount);
     event SetFeesAndRecipient(uint256 indexed withdrawFee, uint256 indexed totalFees, address indexed newRecipient);
@@ -149,36 +153,24 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     }
 
     function withdraw(uint256 assets, address receiver, address owner) public override nonReentrant returns (uint256 shares) {
-        if(msg.sender != owner && receiver != owner){revert XpandrErrors.NotAccountOwner();}
-        
-        shares = previewWithdraw(assets);
-
-        if(shares > asset.balanceOf(msg.sender)){revert XpandrErrors.OverBalance();}
+        if(msg.sender != receiver && msg.sender != owner){revert XpandrErrors.NotAccountOwner();}
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
+
+        shares = previewWithdraw(assets);
+        if(shares > ERC20(address(this)).balanceOf(msg.sender)){revert XpandrErrors.OverBalance();}
        
-        _withdraw(assets);
+        _collect(assets);
         _burn(owner, shares);
 
-        asset.safeTransfer(receiver, assets);
+        uint256 assetBal = asset.balanceOf(address(this));
+        if (assetBal > assets) {assetBal = assets;}
+
+        if(WITHDRAW_FEE > 0){
+            uint256 withdrawFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR; 
+            asset.safeTransfer(receiver, assetBal - withdrawFeeAmount);
+        } else {asset.safeTransfer(receiver, assetBal);}
 
         emit Withdraw(msg.sender, receiver, owner, assets, shares);
-    }
-
-    function _withdraw(uint256 _amount) internal {
-        uint256 assetBal = ERC20(asset).balanceOf(address(this));
-
-        if (assetBal < _amount) {
-            IEqualizerGauge(gauge).withdraw(_amount - assetBal);
-            assetBal = ERC20(asset).balanceOf(address(this));             
-        }
-
-        if (assetBal > _amount) {
-            assetBal = _amount;
-        }
-        if(WITHDRAW_FEE > 0){
-            uint256 withdrawalFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR; 
-            ERC20(asset).safeTransfer(address(this), assetBal - withdrawalFeeAmount);
-        } else {ERC20(asset).safeTransfer(address(this), assetBal);}
     }
 
     function harvest() external {
@@ -207,11 +199,19 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     /*//////////////////////////////////////////////////////////////
                           INTERNAL HELPERS
     //////////////////////////////////////////////////////////////*/
-
-    //Deposits funds in the farm
+    // Deposits funds in the farm
     function _earn() internal {
-        uint256 assetBal = ERC20(asset).balanceOf(address(this));
+        uint256 assetBal = asset.balanceOf(address(this));
         IEqualizerGauge(gauge).deposit(assetBal);
+    }
+
+    // Withdraw funds from the farm
+    function _collect(uint256 _amount) internal {
+        uint256 assetBal = asset.balanceOf(address(this));
+        if (assetBal < _amount) {
+            IEqualizerGauge(gauge).withdraw(_amount - assetBal);
+            assetBal = asset.balanceOf(address(this));             
+        }
     }
 
     function _chargeFees(address caller) internal {                   
@@ -240,8 +240,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     /*//////////////////////////////////////////////////////////////
                                VIEWS
     //////////////////////////////////////////////////////////////*/
-
-    //Determines the amount of reward in native upon calling the harvest function
+    // Determines the amount of reward in native upon calling the harvest function
     function callReward() public view returns (uint256) {
         uint256 outputBal = rewardBalance();
         uint256 wrappedOut;
@@ -255,11 +254,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
         return asset.balanceOf(address(this));
     }
     
-    //Returns rewards unharvested
-    function rewardBalance() public view returns (uint256) {
-        return IEqualizerGauge(gauge).earned(equal, address(this));
-    }
-    //Returns total amount of 'asset' held by the vault and contracts it deposits in.
+    // Returns total amount of 'asset' held by the vault and contracts it deposits in.
     function totalAssets() public view override returns (uint256) {
         return asset.balanceOf(address(this)) + balanceOfPool();
     }
@@ -267,6 +262,11 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     //Return how much 'asset' the vault has working in the farm
     function balanceOfPool() public view returns (uint256) {
         return IEqualizerGauge(gauge).balanceOf(address(this));
+    }
+
+    // Returns rewards unharvested
+    function rewardBalance() public view returns (uint256) {
+        return IEqualizerGauge(gauge).earned(equal, address(this));
     }
 
     //Function for UIs to display the current value of 1 vault share
@@ -277,8 +277,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     /*//////////////////////////////////////////////////////////////
                             VAULT SECURITY
     //////////////////////////////////////////////////////////////*/
-
-    //Pauses the vault & executes emergency withdraw
+    // Pauses the vault & executes emergency withdraw
     function panic() external onlyAdmin {
         pause();
         IEqualizerGauge(gauge).withdraw(balanceOfPool());
@@ -302,7 +301,8 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     function setFeesAndRecipient(uint256 _callFee, uint256 _stratFee, uint256 _withdrawFee, uint256 _treasuryFee, uint256 _recipientFee, address _recipient) external onlyAdmin {
         if(_withdrawFee > 1){revert XpandrErrors.OverMaxFee();}
         uint256 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
-        if(sum > FEE_DIVISOR){revert XpandrErrors.OverFeeDiv();}
+        //FeeDivisor is halved for divisions with >> 500 instead of /1000. As such, must * 2 for correct condition check here.
+        if(sum > FEE_DIVISOR * 2){revert XpandrErrors.OverFeeDiv();}
         if(feeRecipient != _recipient){feeRecipient = _recipient;}
 
         CALL_FEE = _callFee;
@@ -314,16 +314,26 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
         emit SetFeesAndRecipient(WITHDRAW_FEE, sum, feeRecipient);
     }
 
-    // Sets the feeRecipient address
-    function setFeeRecipient(address _feeRecipient) external onlyOwner {
-        feeRecipient = _feeRecipient;
-        emit SetFeeRecipient(_feeRecipient);
-    }
-
     function setRouterOrGauge(address _router, address _gauge) external onlyOwner {
         if(_router != router){router = _router;}
         if(_gauge != gauge){gauge = _gauge;}
         emit SetRouterOrGauge(router, gauge);
+    }
+
+    function setPaths(IEqualizerRouter.Routes[] memory _equalToMpx, IEqualizerRouter.Routes[] memory _equalToWftm) external onlyAdmin{
+        if(_equalToMpx.length != 0){
+            delete equalToMpxPath;
+            for (uint i; i < _equalToMpx.length; ++i) {
+            equalToMpxPath.push(_equalToMpx[i]);
+            }
+        }
+        if(_equalToWftm.length != 0){
+            delete equalToWftmPath;
+            for (uint i; i < _equalToWftm.length; ++i) {
+            equalToWftmPath.push(_equalToWftm[i]);
+            }
+        }
+        emit SetPaths(equalToMpxPath, equalToWftmPath);
     }
 
    function setFeeToken(address _feeToken, IEqualizerRouter.Routes[] memory _feeTokenPath) external onlyAdmin {
@@ -370,14 +380,14 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     }
 
     function _subAllowance() internal {
-        ERC20(asset).safeApprove(gauge, 0);
+        asset.safeApprove(gauge, 0);
         ERC20(equal).safeApprove(router, 0);
         ERC20(wftm).safeApprove(router, 0);
         ERC20(mpx).safeApprove(router, 0);
     }
 
     function _addAllowance() internal {
-        ERC20(asset).safeApprove(gauge, type(uint).max);
+        asset.safeApprove(gauge, type(uint).max);
         ERC20(equal).safeApprove(router, type(uint).max);
         ERC20(wftm).safeApprove(router, type(uint).max);
         ERC20(mpx).safeApprove(router, type(uint).max);

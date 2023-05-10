@@ -26,8 +26,8 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable, XpandrErrors {
     address public router;
 
     // Xpandr addresses
-    address public constant harvester = address(0xb8924595019aFB894150a9C7CBEc3362999b9f94);
-    address public treasury = address(0xfAE236b4E261278C2B84e74b4631cf7BCAFca06d);
+    address public constant harvester = address(0xDFAA88D5d068370689b082D34d7B546CbF393bA9);
+    address public constant treasury = address(0xE37058057B0751bD2653fdeB27e8218439e0f726);
     address public feeRecipient;
     address public vault; 
 

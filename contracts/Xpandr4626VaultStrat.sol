@@ -28,8 +28,18 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     using FixedPointMathLib for uint256;
 
     /*//////////////////////////////////////////////////////////////
-                            VARIABLES
+                          VARIABLES & EVENTS
     //////////////////////////////////////////////////////////////*/
+    event Harvest(address indexed harvester);
+    event SetFeeRecipient(address indexed newRecipient);
+    event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
+    event SetFeeToken(address indexed newFeeToken);
+    event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
+    event Panic(address indexed caller);
+    event MakeCustomTxn(address indexed from, address indexed to, uint256 indexed amount);
+    event SetFeesAndRecipient(uint64 indexed withdrawFee, uint64 indexed totalFees, address indexed newRecipient);
+    event StuckTokens(address indexed caller, uint256 indexed amount, address indexed token);
+    
     // Tokens
     address public immutable wftm = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
     address public immutable equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
@@ -38,7 +48,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     address public feeToken;
     address[] public rewardTokens;
 
-    // Third party contracts
+    // 3rd party contracts
     address public gauge;
     address public router;
 
@@ -47,42 +57,27 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     address public constant treasury = address(0xE37058057B0751bD2653fdeB27e8218439e0f726);
     address public feeRecipient;
 
-    //Routes
+    // Routes
     IEqualizerRouter.Routes[] public equalToWftmPath;
     IEqualizerRouter.Routes[] public equalToMpxPath;
     IEqualizerRouter.Routes[] public feeTokenPath;
     IEqualizerRouter.Routes[] public customPath;
 
+    // Fee Structure
+    uint64 public constant FEE_DIVISOR = 500;
+    uint64 public constant PLATFORM_FEE = 35;               // 3.5% Platform fee 
+    uint64 public WITHDRAW_FEE = 0;                         // 0% of withdrawal amount. Kept in case of spam attacks.
+    uint64 public TREASURY_FEE = 590;
+    uint64 public CALL_FEE = 120;
+    uint64 public STRAT_FEE = 290;  
+    uint64 public RECIPIENT_FEE;
+
     // Controllers
+    uint64 internal lastHarvest; 
     uint256 public vaultProfit;
-    uint64 internal lastHarvest;
     bool internal constant stable = false;
     uint8 public harvestOnDeposit;
     mapping(address => uint64) internal lastUserDeposit;
-
-    /*//////////////////////////////////////////////////////////////
-                          FEE STRUCTURE
-    //////////////////////////////////////////////////////////////*/
-    uint256 public constant FEE_DIVISOR = 500;
-    uint256 public constant PLATFORM_FEE = 35;               // 3.5% Platform fee 
-    uint256 public WITHDRAW_FEE = 0;                         // 0% of withdrawal amount. Kept in case of spam attacks.
-    uint256 public TREASURY_FEE = 590;
-    uint256 public CALL_FEE = 120;
-    uint256 public STRAT_FEE = 290;  
-    uint256 public RECIPIENT_FEE;
-
-    /*//////////////////////////////////////////////////////////////
-                               EVENTS
-    //////////////////////////////////////////////////////////////*/
-    event Harvest(address indexed harvester);
-    event SetFeeRecipient(address indexed newRecipient);
-    event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
-    event SetFeeToken(address indexed newFeeToken);
-    event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[]);
-    event Panic(address indexed caller);
-    event MakeCustomTxn(address indexed from, address indexed to, uint256 indexed amount);
-    event SetFeesAndRecipient(uint256 indexed withdrawFee, uint256 indexed totalFees, address indexed newRecipient);
-    event StuckTokens(address indexed caller, uint256 indexed amount, address indexed token);
 
     constructor(
         ERC20 _asset,
@@ -130,7 +125,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
         deposit(asset.balanceOf(msg.sender), msg.sender);
     }
 
-    //Entrypoint of funds into the system. The vault then deposits funds into the strategy.  
+    // Entrypoint of funds into the system. The vault then deposits funds into the farm.  
     function deposit(uint256 assets, address receiver) public override whenNotPaused nonReentrant() returns (uint256 shares) {
         if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp + 600)) {revert XpandrErrors.UnderTimeLock();}}
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
@@ -152,6 +147,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
         withdraw(asset.balanceOf(msg.sender), msg.sender, msg.sender);
     }
 
+    // Exit point from the system. Collects asset from farm and sends to owner.
     function withdraw(uint256 assets, address receiver, address owner) public override nonReentrant returns (uint256 shares) {
         if(msg.sender != receiver && msg.sender != owner){revert XpandrErrors.NotAccountOwner();}
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
@@ -298,9 +294,9 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     /*//////////////////////////////////////////////////////////////
                                SETTERS
     //////////////////////////////////////////////////////////////*/
-    function setFeesAndRecipient(uint256 _callFee, uint256 _stratFee, uint256 _withdrawFee, uint256 _treasuryFee, uint256 _recipientFee, address _recipient) external onlyAdmin {
+    function setFeesAndRecipient(uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyAdmin {
         if(_withdrawFee > 1){revert XpandrErrors.OverMaxFee();}
-        uint256 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
+        uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         //FeeDivisor is halved for divisions with >> 500 instead of /1000. As such, must * 2 for correct condition check here.
         if(sum > FEE_DIVISOR * 2){revert XpandrErrors.OverFeeDiv();}
         if(feeRecipient != _recipient){feeRecipient = _recipient;}

@@ -13,6 +13,16 @@ import "./interfaces/XpandrErrors.sol";
 contract MpxFtmEqualizerV2 is AccessControl, Pausable, XpandrErrors {
     using SafeTransferLib for ERC20;
 
+    event Harvest(address indexed harvester);
+    event SetVault(address indexed newVault);
+    event SetRouterOrGauge(address indexed router, address indexed gauge);
+    event SetFeeToken(address indexed newFeeToken);
+    event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
+    event SetFeesAndRecipient(uint64 indexed withdrawFee, uint64 indexed totalFees, address indexed newRecipient);
+    event RetireStrat(address indexed caller);
+    event Panic(address indexed caller);
+    event MakeCustomTxn(address indexed from, address indexed to, uint256 indexed amount);
+
     // Tokens
     address public constant wftm = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
     address public constant equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
@@ -37,35 +47,26 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable, XpandrErrors {
     IEqualizerRouter.Routes[] public feeTokenPath;
     IEqualizerRouter.Routes[] public customPath;
 
-    // Controllers
-    bool public constant stable = false;
-    uint256 public harvestProfit;
-    uint8 public harvestOnDeposit;
-    uint64 private lastHarvest;
+    // Fee Structure
+    uint64 public constant FEE_DIVISOR = 500;
+    uint64 public constant PLATFORM_FEE = 35;               // 3.5% Platform fee 
+    uint64 public WITHDRAW_FEE = 0;                         // 0% of withdrawal amount. Kept in case of economic attacks.
+    uint64 public TREASURY_FEE = 590;
+    uint64 public CALL_FEE = 125;
+    uint64 public STRAT_FEE = 285;  
+    uint64 public RECIPIENT_FEE;
 
-    /*//////////////////////////////////////////////////////////////
-                          FEE STRUCTURE
-    //////////////////////////////////////////////////////////////*/
-    uint256 public constant FEE_DIVISOR = 500;
-    uint256 public constant PLATFORM_FEE = 35;               // 3.5% Platform fee 
-    uint256 public WITHDRAW_FEE = 0;                         // 0% of withdrawal amount. Kept in case of economic attacks.
-    uint256 public TREASURY_FEE = 590;
-    uint256 public CALL_FEE = 125;
-    uint256 public STRAT_FEE = 285;  
-    uint256 public RECIPIENT_FEE;
+    // Controllers
+    uint64 private lastHarvest;
+    uint256 public harvestProfit;
+    bool public constant stable = false;
+    uint8 public harvestOnDeposit;
+
 
     /*//////////////////////////////////////////////////////////////
                                EVENTS
     //////////////////////////////////////////////////////////////*/
-    event Harvest(address indexed harvester);
-    event SetVault(address indexed newVault);
-    event SetFeeRecipient(address indexed newRecipient);
-    event SetRouterOrGauge(address indexed router, address indexed gauge);
-    event SetFeeToken(address indexed newFeeToken);
-    event RetireStrat(address indexed caller);
-    event Panic(address indexed caller);
-    event MakeCustomTxn(address indexed from, address indexed to, uint256 indexed amount);
-    event SetFees(uint256 indexed withdrawFee, uint256 indexed totalFees);
+   
 
     constructor(
         address _asset,
@@ -253,18 +254,20 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable, XpandrErrors {
     /*//////////////////////////////////////////////////////////////
                                SETTERS
     //////////////////////////////////////////////////////////////*/
-    function setFees(uint256 newCallFee, uint256 newStratFee, uint256 newWithdrawFee, uint256 newTreasuryFee, uint256 newRecipientFee) external onlyAdmin {
-        if(newWithdrawFee > 1){revert OverMaxFee();}
-        uint256 sum = newCallFee + newStratFee + newTreasuryFee + newRecipientFee;
-        if(sum > FEE_DIVISOR){revert OverFeeDiv();}
+    function setFeesAndRecipient(uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyAdmin {
+        if(_withdrawFee > 1){revert XpandrErrors.OverMaxFee();}
+        uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
+        //FeeDivisor is halved for divisions with >> 500 instead of /1000. As such, must * 2 for correct condition check here.
+        if(sum > FEE_DIVISOR * 2){revert XpandrErrors.OverFeeDiv();}
+        if(feeRecipient != _recipient){feeRecipient = _recipient;}
 
-        CALL_FEE = newCallFee;
-        STRAT_FEE = newStratFee;
-        WITHDRAW_FEE = newWithdrawFee;
-        TREASURY_FEE = newTreasuryFee;
-        RECIPIENT_FEE = newRecipientFee;
+        CALL_FEE = _callFee;
+        STRAT_FEE = _stratFee;
+        WITHDRAW_FEE = _withdrawFee;
+        TREASURY_FEE = _treasuryFee;
+        RECIPIENT_FEE = _recipientFee;
 
-        emit SetFees(newWithdrawFee, sum);
+        emit SetFeesAndRecipient(WITHDRAW_FEE, sum, feeRecipient);
     }
 
     // Sets the vault connected to this strategy
@@ -273,17 +276,28 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable, XpandrErrors {
         emit SetVault(_vault);
     }
 
-    // Sets the feeRecipient address
-    function setFeeRecipient(address _feeRecipient) external onlyAdmin {
-        feeRecipient = _feeRecipient;
-        emit SetFeeRecipient(_feeRecipient);
-    }
-
     function setRouterOrGauge(address _router, address _gauge) external onlyAdmin {
         if(_router != router){router = _router;}
         if(_gauge != gauge){gauge = _gauge;}
         emit SetRouterOrGauge(router, gauge);
     }
+
+    function setPaths(IEqualizerRouter.Routes[] memory _equalToMpx, IEqualizerRouter.Routes[] memory _equalToWftm) external onlyAdmin{
+        if(_equalToMpx.length != 0){
+            delete equalToMpxPath;
+            for (uint i; i < _equalToMpx.length; ++i) {
+            equalToMpxPath.push(_equalToMpx[i]);
+            }
+        }
+        if(_equalToWftm.length != 0){
+            delete equalToWftmPath;
+            for (uint i; i < _equalToWftm.length; ++i) {
+            equalToWftmPath.push(_equalToWftm[i]);
+            }
+        }
+        emit SetPaths(equalToMpxPath, equalToWftmPath);
+    }
+
 
    function setFeeToken(address _feeToken, IEqualizerRouter.Routes[] memory _feeTokenPath) external onlyAdmin {
        if(_feeToken == address(0) || _feeTokenPath.length == 0){revert InvalidTokenOrPath();}

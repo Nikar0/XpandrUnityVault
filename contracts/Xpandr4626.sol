@@ -11,7 +11,8 @@ www.github.com/nikar0/Xpandr4626 - www.twitter.com/Nikar0_
 pragma solidity 0.8.17;
 
 import {ReentrancyGuard} from "./interfaces/solmate//ReentrancyGuard.sol";
-import {ERC20, ERC4626} from "./interfaces/solmate/ERC4626.sol";
+import {ERC4626} from "./interfaces/solmate/ERC4626.sol";
+import {ERC20} from "./interfaces/solmate/ERC20.sol";
 import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
 import {FixedPointMathLib} from "./interfaces/solmate/FixedPointMathLib.sol";
 import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
@@ -24,7 +25,7 @@ Implementation of a vault to deposit funds for yield optimizing
 This is the contract that receives funds & users interface with
 The strategy itself is implemented in a separate Strategy contract
  */
-contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
+contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard {
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint256;
 
@@ -53,12 +54,9 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
      */
     constructor (ERC20 _asset, IStrategy _strategy)
        ERC4626(
-            // Underlying token
             _asset,
-            // ex: Rari Dai Stablecoin Vault
-            string(abi.encodePacked("Xpandr4626 Vault")),
-            // ex: rvDAI
-            string(abi.encodePacked("Xp-MPX-FTM"))
+            string(abi.encodePacked("Tester")),
+            string(abi.encodePacked("LP"))
         )
     {
         strategy = _strategy;
@@ -75,11 +73,11 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
     //Entrypoint of funds into the system. The vault then deposits funds into the strategy.  
     function deposit(uint256 assets, address receiver) public virtual override nonReentrant() returns (uint256 shares) {
         if (lastUserDeposit[msg.sender] == 0) {lastUserDeposit[msg.sender] = uint64(block.timestamp);} 
-        if (lastUserDeposit[msg.sender] < uint64(block.timestamp) + 600) {revert UnderTimeLock();}
-        if(tx.origin != receiver){revert NotAccountOwner();}
+        if (lastUserDeposit[msg.sender] < uint64(block.timestamp) + 600) {revert XpandrErrors.UnderTimeLock();}
+        if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
         vaultProfit = vaultProfit + strategy.harvestProfit();
         shares = previewDeposit(assets);
-        if(shares == 0){revert ZeroAmount();}
+        if(shares == 0){revert XpandrErrors.ZeroAmount();}
 
         asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
         _earn();
@@ -109,10 +107,10 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
      */
 
     function withdraw(uint256 assets, address receiver, address owner) public virtual override nonReentrant returns (uint256 shares) {
-        if(msg.sender != receiver && msg.sender != owner){revert NotAccountOwner();}
-        if(assets > asset.balanceOf(msg.sender)){revert OverBalance();}
+        if(msg.sender != receiver && msg.sender != owner){revert XpandrErrors.NotAccountOwner();}
+        if(assets > asset.balanceOf(msg.sender)){revert XpandrErrors.OverBalance();}
         shares = previewWithdraw(assets);
-        if(assets == 0 || shares == 0){revert ZeroAmount();}
+        if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
        
         strategy.withdraw(assets);
         _burn(owner, shares);
@@ -139,7 +137,6 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
         return totalSupply == 0 ? 1e18 : totalAssets() * 1e18 / totalSupply;
     }
 
-    
     //Calculates total amount of 'asset' held by the system. Vault, strategy and contracts it deposits in.
     
     function totalAssets() public view override returns (uint256) {
@@ -152,7 +149,7 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
     
     //Sets the candidate for the new strat to use with this vault.
     function queueStrat(address _implementation) public onlyAdmin {
-        if(address(this) != IStrategy(_implementation).vault()){revert InvalidProposal();}
+        if(address(this) != IStrategy(_implementation).vault()){revert XpandrErrors.InvalidProposal();}
         stratCandidate = StratCandidate({
             implementation: _implementation,
             proposedTime: uint64(block.timestamp)
@@ -167,8 +164,8 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
     happening in +100 years for safety. 
     */
     function swapStrat() public onlyAdmin {
-        if(stratCandidate.implementation == address(0)){revert ZeroAddress();}
-        if(stratCandidate.proposedTime + approvalDelay > uint64(block.timestamp)){revert UnderTimeLock();}
+        if(stratCandidate.implementation == address(0)){revert XpandrErrors.ZeroAddress();}
+        if(stratCandidate.proposedTime + approvalDelay > uint64(block.timestamp)){revert XpandrErrors.UnderTimeLock();}
 
         emit SwapStrat(stratCandidate.implementation);
         strategy.retireStrat();
@@ -181,7 +178,7 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard, XpandrErrors {
 
     //Rescues random funds stuck that the strat can't handle.
     function stuckTokens(address _token) external onlyAdmin {
-        if(ERC20(_token) == asset){revert InvalidTokenOrPath();}
+        if(ERC20(_token) == asset){revert XpandrErrors.InvalidTokenOrPath();}
 
         uint256 amount = ERC20(_token).balanceOf(address(this));
         ERC20(_token).safeTransfer(msg.sender, amount);

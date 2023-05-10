@@ -72,8 +72,9 @@ contract Xpandr4626 is ERC4626, AdminOwned, ReentrancyGuard {
 
     //Entrypoint of funds into the system. The vault then deposits funds into the strategy.  
     function deposit(uint256 assets, address receiver) public override nonReentrant() returns (uint256 shares) {
-        if (lastUserDeposit[msg.sender] == 0) {lastUserDeposit[msg.sender] = uint64(block.timestamp);} 
-        if (lastUserDeposit[msg.sender] < uint64(block.timestamp + 600)) {revert XpandrErrors.UnderTimeLock();}
+        //if (lastUserDeposit[msg.sender] == 0) {lastUserDeposit[msg.sender] = uint64(block.timestamp);} 
+        //else {if (lastUserDeposit[msg.sender] < uint64(block.timestamp + 600)) {revert XpandrErrors.UnderTimeLock();}}
+        if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp + 600)) {revert XpandrErrors.UnderTimeLock();}}
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
 
         shares = previewDeposit(assets);

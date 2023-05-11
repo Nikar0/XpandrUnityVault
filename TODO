@@ -1,1 +1,2 @@
-
+Removed reentrancy guard to instead use correct checks/balances.
+100X check if it's done correctly. Fight ptsd.

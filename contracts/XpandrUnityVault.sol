@@ -5,7 +5,7 @@
 @title - XpandrUnityVault
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
-          Includes feeToken switch / 0% withdraw fee / Deposit & harvest buffers.
+          Includes feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers.
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 
@@ -16,14 +16,13 @@ https://eips.ethereum.org/EIPS/eip-4626
 Using solmate's gas optimized libs
 https://github.com/transmissions11/solmate
 
-@notice - AccessControl is a modified solmate Owned.sol w/ added Strategist + error codes.
-        - Pauser is a modified OZ Pausable.sol using uint8 instead of bool + error codes.
+@notice - AccessControl = modified solmate Owned.sol w/ added Strategist + error codes.
+        - Pauser = modified OZ Pausable.sol using uint8 instead of bool + error codes.
 **/
 
 pragma solidity 0.8.17;
 
 import {ERC20, ERC4626} from "./interfaces/solmate/ERC4626.sol";
-import {FixedPointMathLib} from "./interfaces/solmate/FixedPointMathLib.sol";
 import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
 import {AccessControl} from "./interfaces/AccessControl.sol";
 import {Pauser} from "./interfaces/Pauser.sol";
@@ -33,7 +32,6 @@ import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 
 contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     using SafeTransferLib for ERC20;
-    using FixedPointMathLib for uint;
 
     /*//////////////////////////////////////////////////////////////
                           VARIABLES & EVENTS

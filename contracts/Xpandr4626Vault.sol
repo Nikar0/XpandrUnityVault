@@ -14,7 +14,6 @@ import {ReentrancyGuard} from "./interfaces/solmate//ReentrancyGuard.sol";
 import {ERC4626} from "./interfaces/solmate/ERC4626.sol";
 import {ERC20} from "./interfaces/solmate/ERC20.sol";
 import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
-import {FixedPointMathLib} from "./interfaces/solmate/FixedPointMathLib.sol";
 import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
 import {AccessControl} from "./interfaces/AccessControl.sol";
 import {IStrategy} from "./interfaces/IStrategy.sol";
@@ -27,7 +26,6 @@ The strategy itself is implemented in a separate Strategy contract
  */
 contract Xpandr4626Vault is ERC4626, AccessControl, ReentrancyGuard {
     using SafeTransferLib for ERC20;
-    using FixedPointMathLib for uint256;
 
     /*//////////////////////////////////////////////////////////////
                            VARIABLES & EVENTS

@@ -126,7 +126,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, Pauser{
         deposit(asset.balanceOf(msg.sender), msg.sender);
     }
 
-    // Entrypoint of funds into the system. The vault then deposits funds into the farm.  
+    // Deposit 'asset' into the vault which then deposits funds into the farm.  
     function deposit(uint256 assets, address receiver) public override whenNotPaused returns (uint256 shares) {
         if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp) + delay) {revert XpandrErrors.UnderTimeLock();}}
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
@@ -147,7 +147,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, Pauser{
         withdraw(asset.balanceOf(msg.sender), msg.sender, msg.sender);
     }
 
-    // Exit point from the system. Collects asset from farm and sends to owner.
+    // Withdraw 'asset' from farm into vault % sends to owner.
     function withdraw(uint256 assets, address receiver, address owner) public override returns (uint256 shares) {
         if(msg.sender != receiver && msg.sender != owner){revert XpandrErrors.NotAccountOwner();}
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}

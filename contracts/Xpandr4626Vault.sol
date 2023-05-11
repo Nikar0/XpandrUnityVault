@@ -25,7 +25,7 @@ Implementation of a vault to deposit funds for yield optimizing
 This is the contract that receives funds & users interface with
 The strategy itself is implemented in a separate Strategy contract
  */
-contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
+contract Xpandr4626Vault is ERC4626, AccessControl, ReentrancyGuard {
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint256;
 
@@ -109,10 +109,10 @@ contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
      */
 
     function withdraw(uint256 assets, address receiver, address owner) public override nonReentrant returns (uint256 shares) {
-        if(msg.sender != owner && receiver != owner){revert XpandrErrors.NotAccountOwner();}
-        if(assets > asset.balanceOf(msg.sender)){revert XpandrErrors.OverBalance();}
+       if(msg.sender != receiver && msg.sender != owner){revert XpandrErrors.NotAccountOwner();}
         shares = previewWithdraw(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
+        if(shares > ERC20(address(this)).balanceOf(msg.sender)){revert XpandrErrors.OverBalance();}
        
         _burn(owner, shares);
         strategy.withdraw(assets);

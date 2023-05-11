@@ -1,14 +1,23 @@
 //SPDX-License-Identifier: MIT
 
 /** 
-@title Xpandr4626VaultStrat
-@author Nikar0 
-@notice Minimal, streamlined, security and gas considerate unified Vault + Stragegy contract
+
+@title - XpandrUnityVault
+@author - Nikar0 
+@notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
+          Includes feeToken switch / 0% withdraw fee / Deposit & harvest buffers.
+
+https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 
 
-Vault based on EIP 4626 by @joey_santoro, @transmissions11, et all
+Vault based on EIP-4626 by @joey_santoro, @transmissions11, et all.
+https://eips.ethereum.org/EIPS/eip-4626
 
-www.github.com/nikar0/Xpandr4626    @Nikar0_
+Using solmate's gas optimized libs
+https://github.com/transmissions11/solmate
+
+@notice - AccessControl is a modified solmate Owned.sol w/ added Strategist + error codes.
+        - Pauser is a modified OZ Pausable.sol using uint8 instead of bool + error codes.
 **/
 
 pragma solidity 0.8.17;
@@ -22,7 +31,7 @@ import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
 import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
 import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 
-contract Xpandr4626VaultStrat is ERC4626, AccessControl, Pauser{
+contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint;
 
@@ -144,9 +153,8 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, Pauser{
     // Withdraw 'asset' from farm into vault % sends to owner.
     function withdraw(uint assets, address receiver, address owner) public override returns (uint shares) {
         if(msg.sender != receiver && msg.sender != owner){revert XpandrErrors.NotAccountOwner();}
-        if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
-
         shares = previewWithdraw(assets);
+        if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
         if(shares > ERC20(address(this)).balanceOf(msg.sender)){revert XpandrErrors.OverBalance();}
        
         _burn(owner, shares);

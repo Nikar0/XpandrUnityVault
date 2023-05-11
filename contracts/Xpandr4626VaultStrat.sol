@@ -15,7 +15,6 @@ pragma solidity 0.8.17;
 
 import {ERC20, ERC4626} from "./interfaces/solmate/ERC4626.sol";
 import {AccessControl} from "./interfaces/AccessControl.sol";
-import {ReentrancyGuard} from "./interfaces/solmate//ReentrancyGuard.sol";
 import {Pauser} from "./interfaces/Pauser.sol";
 import {FixedPointMathLib} from "./interfaces/solmate/FixedPointMathLib.sol";
 import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
@@ -23,9 +22,9 @@ import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
 import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
 import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 
-contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser{
+contract Xpandr4626VaultStrat is ERC4626, AccessControl, Pauser{
     using SafeTransferLib for ERC20;
-    using FixedPointMathLib for uint256;
+    using FixedPointMathLib for uint;
 
     /*//////////////////////////////////////////////////////////////
                           VARIABLES & EVENTS
@@ -36,16 +35,16 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     event SetFeeToken(address indexed newFeeToken);
     event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
     event Panic(address indexed caller);
-    event MakeCustomTxn(address indexed from, address indexed to, uint256 indexed amount);
+    event MakeCustomTxn(address indexed from, uint indexed amount);
     event SetFeesAndRecipient(uint64 indexed withdrawFee, uint64 indexed totalFees, address indexed newRecipient);
-    event StuckTokens(address indexed caller, uint256 indexed amount, address indexed token);
+    event StuckTokens(address indexed caller, uint indexed amount, address indexed token);
     
     // Tokens
     address public immutable wftm = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
     address public immutable equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
     address public immutable mpx = address(0x66eEd5FF1701E6ed8470DC391F05e27B1d0657eb);
-    address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75); //vaultProfit returns USDC value
-    address public feeToken;
+    address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit returns USDC value
+    address public feeToken;         //Switch for which token protocol receives fees in. In mind for Native, Reward, Stable.
     address[] public rewardTokens;
 
     // 3rd party contracts
@@ -64,20 +63,21 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     IEqualizerRouter.Routes[] public customPath;
 
     // Fee Structure
-    uint64 public constant FEE_DIVISOR = 500;
+    uint64 public constant FEE_DIVISOR = 500;               //Halved for cheaper divisions with >> 500 instead of / 1000
     uint64 public constant PLATFORM_FEE = 35;               // 3.5% Platform fee 
-    uint64 public WITHDRAW_FEE = 0;                         // 0% of withdrawal amount. Kept in case of spam attacks.
+    uint64 public WITHDRAW_FEE = 0;                         // 0% withdrawal fee. Logic kept in case spam/economic attacks bypass safeguards.
     uint64 public TREASURY_FEE = 590;
     uint64 public CALL_FEE = 120;
     uint64 public STRAT_FEE = 290;  
     uint64 public RECIPIENT_FEE;
 
     // Controllers
-    uint64 internal lastHarvest; 
+    uint64 internal lastHarvest;                             //Safeguard only allows harvest being called if > delay
     uint256 public vaultProfit;
     bool internal constant stable = false;
-    uint8 public harvestOnDeposit;
-    mapping(address => uint64) internal lastUserDeposit;
+    uint8 internal harvestOnDeposit;
+    uint64 public delay;                                    
+    mapping(address => uint64) internal lastUserDeposit;    //Safeguard only allows same user deposits if > delay
 
     constructor(
         ERC20 _asset,
@@ -97,6 +97,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
         gauge = _gauge;
         router = _router;
         feeToken = _feeToken;
+        delay = 600; // 10 mins
 
         for (uint i; i < _equalToWftmPath.length; ++i) {
             equalToWftmPath.push(_equalToWftmPath[i]);
@@ -126,18 +127,17 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     }
 
     // Entrypoint of funds into the system. The vault then deposits funds into the farm.  
-    function deposit(uint256 assets, address receiver) public override whenNotPaused nonReentrant() returns (uint256 shares) {
-        if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp + 600)) {revert XpandrErrors.UnderTimeLock();}}
+    function deposit(uint256 assets, address receiver) public override whenNotPaused returns (uint256 shares) {
+        if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp) + delay) {revert XpandrErrors.UnderTimeLock();}}
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
 
         shares = previewDeposit(assets);
         if(shares == 0){revert XpandrErrors.ZeroAmount();}
+        lastUserDeposit[msg.sender] = uint64(block.timestamp);
 
         asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
-        _earn();
-        lastUserDeposit[msg.sender] = uint64(block.timestamp);
-        
         _mint(msg.sender, shares);
+        _earn();
         emit Deposit(msg.sender, receiver, assets, shares);
 
         if(harvestOnDeposit == 1) {afterDeposit(assets, shares);}
@@ -148,15 +148,15 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     }
 
     // Exit point from the system. Collects asset from farm and sends to owner.
-    function withdraw(uint256 assets, address receiver, address owner) public override nonReentrant returns (uint256 shares) {
+    function withdraw(uint256 assets, address receiver, address owner) public override returns (uint256 shares) {
         if(msg.sender != receiver && msg.sender != owner){revert XpandrErrors.NotAccountOwner();}
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
 
         shares = previewWithdraw(assets);
         if(shares > ERC20(address(this)).balanceOf(msg.sender)){revert XpandrErrors.OverBalance();}
        
-        _collect(assets);
         _burn(owner, shares);
+        _collect(assets);
 
         uint256 assetBal = asset.balanceOf(address(this));
         if (assetBal > assets) {assetBal = assets;}
@@ -171,7 +171,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
-        if(lastHarvest < uint64(block.timestamp + 600)){revert XpandrErrors.UnderTimeLock();}
+        if(lastHarvest < uint64(block.timestamp) + delay){revert XpandrErrors.UnderTimeLock();}
         _harvest(msg.sender);
     }
 
@@ -297,7 +297,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     function setFeesAndRecipient(uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyAdmin {
         if(_withdrawFee > 1){revert XpandrErrors.OverMaxFee();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
-        //FeeDivisor is halved for divisions with >> 500 instead of /1000. As such, must * 2 for correct condition check here.
+        //FeeDivisor is halved for cheaper divisions with >> 500 instead of / 1000. As such, must * 2 for correct condition check here.
         if(sum > FEE_DIVISOR * 2){revert XpandrErrors.OverFeeDiv();}
         if(feeRecipient != _recipient){feeRecipient = _recipient;}
 
@@ -351,6 +351,10 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
         require(_harvestOnDeposit == 0 || _harvestOnDeposit == 1);
         harvestOnDeposit = _harvestOnDeposit;
     } 
+
+    function setDelay(uint64 _delay) external onlyOwner{
+        if(_delay > 1800 || _delay < 600) {revert XpandrErrors.InvalidDelay();}
+    }
     /*//////////////////////////////////////////////////////////////
                                UTILS
     //////////////////////////////////////////////////////////////*/
@@ -358,21 +362,18 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
     /** This function exists incase tokens that do not match the {asset} of this strategy accrue.  For example: an amount of
     tokens sent to this address in the form of an airdrop of a different token type. This will allow conversion
     said token to the {output} token of the strategy, allowing the amount to be paid out to stakers in the next harvest. */ 
-    function makeCustomTxn(address [][] memory _tokens, bool[] calldata _stable) external onlyAdmin {
-        for (uint i; i < _tokens.length; ++i) {
-            customPath.push(IEqualizerRouter.Routes({
-                from: _tokens[i][0],
-                to: _tokens[i][1],
-                stable: _stable[i]
-            }));
+    function makeCustomTxn(address _token, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
+        delete customPath;
+        for (uint i; i < _path.length; ++i) {
+            customPath.push(_path[i]);
         }
-        uint256 bal = ERC20(_tokens[0][0]).balanceOf(address(this));
+        uint256 bal = ERC20(_token).balanceOf(address(this));
 
-        ERC20(_tokens[0][0]).safeApprove(router, 0);
-        ERC20(_tokens[0][0]).safeApprove(router, type(uint).max);
-        IEqualizerRouter(router).swapExactTokensForTokens(bal, 0, customPath, address(this), uint64(block.timestamp + 600));
+        ERC20(_token).safeApprove(router, 0);
+        ERC20(_token).safeApprove(router, type(uint).max);
+        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 0, customPath, address(this), uint64(block.timestamp));
    
-        emit MakeCustomTxn(_tokens[0][0], _tokens[0][_tokens.length - 1], bal);
+        emit MakeCustomTxn(_token, bal);
     }
 
     function _subAllowance() internal {
@@ -391,7 +392,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, ReentrancyGuard, Pauser
 
     //ERC4626 hook. Called by deposit if harvestOnDeposit = 1. Args unused but part of spec
     function afterDeposit(uint256 assets, uint256 shares) internal override whenNotPaused {
-         _harvest(tx.origin);
+        _harvest(tx.origin);
     }
 
     //Incase fee is taken in native or non reward token

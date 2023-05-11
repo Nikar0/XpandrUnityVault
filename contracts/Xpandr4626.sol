@@ -71,21 +71,20 @@ contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
     }
 
     //Entrypoint of funds into the system. The vault then deposits funds into the strategy.  
-    function deposit(uint256 assets, address receiver) public override nonReentrant() returns (uint256 shares) {
-        //if (lastUserDeposit[msg.sender] == 0) {lastUserDeposit[msg.sender] = uint64(block.timestamp);} 
-        //else {if (lastUserDeposit[msg.sender] < uint64(block.timestamp + 600)) {revert XpandrErrors.UnderTimeLock();}}
+    function deposit(uint256 assets, address receiver) public override nonReentrant returns (uint256 shares) {
         if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp + 600)) {revert XpandrErrors.UnderTimeLock();}}
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
 
         shares = previewDeposit(assets);
         if(shares == 0){revert XpandrErrors.ZeroAmount();}
 
-        asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
-        _earn();
         vaultProfit = vaultProfit + strategy.harvestProfit();
         lastUserDeposit[msg.sender] = uint64(block.timestamp);
+
+        asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
         
         _mint(msg.sender, shares);
+        _earn();
         emit Deposit(msg.sender, receiver, assets, shares);
 
         if(strategy.harvestOnDeposit() == 1) {strategy.afterDeposit();}
@@ -115,8 +114,8 @@ contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
         shares = previewWithdraw(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
        
-        strategy.withdraw(assets);
         _burn(owner, shares);
+        strategy.withdraw(assets);
 
         asset.safeTransfer(receiver, assets);
 

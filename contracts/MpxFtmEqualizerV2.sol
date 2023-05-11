@@ -10,7 +10,7 @@ import "./interfaces/IEqualizerRouter.sol";
 import "./interfaces/IEqualizerGauge.sol";
 import "./interfaces/XpandrErrors.sol";
 
-contract MpxFtmEqualizerV2 is AccessControl, Pausable, XpandrErrors {
+contract MpxFtmEqualizerV2 is AccessControl, Pausable {
     using SafeTransferLib for ERC20;
 
     event Harvest(address indexed harvester);
@@ -105,7 +105,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable, XpandrErrors {
                           DEPOSIT/WITHDRAW
     //////////////////////////////////////////////////////////////*/
     function deposit() public whenNotPaused {
-        if(msg.sender != vault){revert NotVault();}
+        if(msg.sender != vault){revert XpandrErrors.NotVault();}
         _deposit();
     }
 
@@ -116,7 +116,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable, XpandrErrors {
     }
 
     function withdraw(uint256 _amount) external {
-        if(msg.sender != vault){revert NotVault();}
+        if(msg.sender != vault){revert  XpandrErrors.NotVault();}
 
         uint256 assetBal = ERC20(asset).balanceOf(address(this));
 
@@ -135,14 +135,14 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable, XpandrErrors {
     }
 
     function harvest() external {
-        if(msg.sender != tx.origin){revert NotEOA();}
-        if(lastHarvest < uint64(block.timestamp + 600)){revert UnderTimeLock();}
+        if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
+        if(lastHarvest < uint64(block.timestamp + 600)){revert XpandrErrors.UnderTimeLock();}
         _harvest(msg.sender);
     }
 
     function _harvest(address caller) internal whenNotPaused {
         if (caller != vault){
-            if(caller != tx.origin){revert NotEOA();}
+            if(caller != tx.origin){revert XpandrErrors.NotEOA();}
         }
 
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
@@ -225,7 +225,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable, XpandrErrors {
 
     //Called as part of strat migration. Sends all available funds back to the vault
     function retireStrat() external {
-        if(msg.sender != vault){revert NotVault();}
+        if(msg.sender != vault){revert XpandrErrors.NotVault();}
         _harvest(msg.sender);
         IEqualizerGauge(gauge).withdraw(balanceOfPool());
         ERC20(asset).transfer(vault, balanceOfWant());
@@ -300,7 +300,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable, XpandrErrors {
 
 
    function setFeeToken(address _feeToken, IEqualizerRouter.Routes[] memory _feeTokenPath) external onlyAdmin {
-       if(_feeToken == address(0) || _feeTokenPath.length == 0){revert InvalidTokenOrPath();}
+       if(_feeToken == address(0) || _feeTokenPath.length == 0){revert XpandrErrors.InvalidTokenOrPath();}
        feeToken = _feeToken;
        delete feeTokenPath;
 
@@ -358,7 +358,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable, XpandrErrors {
 
     //Called by vault if harvestOnDeposit = 1
     function afterDeposit() external whenNotPaused {
-        if(msg.sender != vault){revert NotVault();}
+        if(msg.sender != vault){revert XpandrErrors.NotVault();}
             _harvest(tx.origin);
     }
 

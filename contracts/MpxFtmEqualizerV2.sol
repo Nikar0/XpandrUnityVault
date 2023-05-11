@@ -1,19 +1,31 @@
 //SPDX-License-Identifier: MIT
 
-//Example Strategy to be used with Xpandr4626 Vault
-//Includes: feeToken switch / 0% withdraw fee default / Feeds total profit to vault in USD / Harvest buffers.
+/** 
+@title  - MpxFtmEqualizerV2
+@author - Nikar0 
+@notice - Example Strategy to be used with Xpandr4626 Vault
+Includes: feeToken switch / 0% withdraw fee default / Feeds total profit to vault in USD / Harvest buffer.
+
+https://www.github.com/nikar0/Xpandr4626
+
+Using solmate's gas optimized libs
+https://github.com/transmissions11/solmate
+
+@notice - AccessControl = modified solmate Owned.sol w/ added Strategist + error codes.
+
+*/
 
 pragma solidity 0.8.17;
 
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "./interfaces/solmate/ERC20.sol";
-import "./interfaces/solmate/SafeTransferLib.sol";
-import "./interfaces/AccessControl.sol";
-import "./interfaces/IEqualizerRouter.sol";
-import "./interfaces/IEqualizerGauge.sol";
-import "./interfaces/XpandrErrors.sol";
+import {Pauser} from "./interfaces/Pauser.sol";
+import {ERC20} from "./interfaces/solmate/ERC20.sol";
+import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
+import {AccessControl} from "./interfaces/AccessControl.sol";
+import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
+import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
+import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
 
-contract MpxFtmEqualizerV2 is AccessControl, Pausable {
+contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     using SafeTransferLib for ERC20;
 
     /*//////////////////////////////////////////////////////////////

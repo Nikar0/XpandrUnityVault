@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: MIT
 
 /** 
-@title Xpandr4626Vault
+@title Xpandr4626VaultStrat
 @author Nikar0 
 @notice Minimal, streamlined security and gas considerate unified Vault + Stragegy contract
 

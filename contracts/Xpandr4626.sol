@@ -1,30 +1,38 @@
 //SPDX-License-Identifier: MIT
 
 /** 
-@title Xpandr4626
-@author Nikar0 
-@notice Minimal Vault based on EIP 4626
+@title  - Xpandr4626
+@author - Nikar0 
+@notice - Mininal, security & gas considerate Vault contract. Used as a 2 piece alongside an external Strategy contract.
+        Includes: 0% withdraw fee default / Total Vault profit in USD / Deposit buffer.
 
-www.github.com/nikar0/Xpandr4626 - www.twitter.com/Nikar0_
+https://www.github.com/nikar0/Xpandr4626  @Nikar0_
+
+
+Vault based on EIP-4626 by @joey_santoro, @transmissions11, et all.
+https://eips.ethereum.org/EIPS/eip-4626
+
+Using solmate's gas optimized libs
+https://github.com/transmissions11/solmate
+
+@notice - AccessControl = modified solmate Owned.sol w/ added Strategist + error codes.
 **/
 
 pragma solidity 0.8.17;
 
 import {ReentrancyGuard} from "./interfaces/solmate//ReentrancyGuard.sol";
-import {ERC4626} from "./interfaces/solmate/ERC4626.sol";
-import {ERC20} from "./interfaces/solmate/ERC20.sol";
+import {ERC20, ERC4626} from "./interfaces/solmate/ERC4626.sol";
 import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
 import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
 import {AccessControl} from "./interfaces/AccessControl.sol";
 import {IStrategy} from "./interfaces/IStrategy.sol";
-
 
 /**
 Implementation of a vault to deposit funds for yield optimizing
 This is the contract that receives funds & users interface with
 The strategy itself is implemented in a separate Strategy contract
  */
-contract Xpandr4626Vault is ERC4626, AccessControl, ReentrancyGuard {
+contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
     using SafeTransferLib for ERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -32,18 +40,19 @@ contract Xpandr4626Vault is ERC4626, AccessControl, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
     struct StratCandidate {
         address implementation;
-        uint256 proposedTime;
+        uint proposedTime;
     }
 
     StratCandidate public stratCandidate;         //The last proposed strategy to switch to.
     IStrategy public strategy;                    //The strategy currently in use by the vault.
-    uint256 constant approvalDelay = 43200;       //Delay before a strat can be approved. 12 hours
-    uint256 vaultProfit;                          //Sum of the yield earned by strategies attached to the vault. In 'asset' amount.
+    uint128 constant approvalDelay = 43200;       //Delay before a strat can be approved. 12 hours
+    uint128 internal delay;
+    uint vaultProfit;                             //Sum of the yield earned by strategies attached to the vault. In USD.
     mapping(address => uint64) lastUserDeposit;   //Deposit timer to prevent spam w/ 0 withdraw fee
   
     event NewStratQueued(address implementation);
     event SwapStrat(address implementation);
-    event StuckTokens(address caller, uint256 amount, address token);
+    event StuckTokens(address caller, uint amount, address token);
 
     /**
      Initializes the vault and it's own receipt token
@@ -58,7 +67,7 @@ contract Xpandr4626Vault is ERC4626, AccessControl, ReentrancyGuard {
         )
     {
         strategy = _strategy;
-        totalSupply = type(uint256).max;
+        totalSupply = type(uint).max;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -69,12 +78,12 @@ contract Xpandr4626Vault is ERC4626, AccessControl, ReentrancyGuard {
     }
 
     //Entrypoint of funds into the system. The vault then deposits funds into the strategy.  
-    function deposit(uint256 assets, address receiver) public override nonReentrant returns (uint256 shares) {
-        if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp + 600)) {revert XpandrErrors.UnderTimeLock();}}
+    function deposit(uint assets, address receiver) public override nonReentrant returns (uint shares) {
+        if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp) + delay) {revert XpandrErrors.UnderTimeLock();}}
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
 
         shares = previewDeposit(assets);
-        if(shares == 0){revert XpandrErrors.ZeroAmount();}
+        if(shares == 0 || assets ==0){revert XpandrErrors.ZeroAmount();}
 
         vaultProfit = vaultProfit + strategy.harvestProfit();
         lastUserDeposit[msg.sender] = uint64(block.timestamp);
@@ -106,7 +115,7 @@ contract Xpandr4626Vault is ERC4626, AccessControl, ReentrancyGuard {
      tokens are burned in the process.
      */
 
-    function withdraw(uint256 assets, address receiver, address owner) public override nonReentrant returns (uint256 shares) {
+    function withdraw(uint assets, address receiver, address owner) public override nonReentrant returns (uint shares) {
        if(msg.sender != receiver && msg.sender != owner){revert XpandrErrors.NotAccountOwner();}
         shares = previewWithdraw(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
@@ -125,24 +134,29 @@ contract Xpandr4626Vault is ERC4626, AccessControl, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     //Returns idle funds in the vault
-    function idleFunds() public view returns (uint256) {
+    function idleFunds() public view returns (uint) {
         return asset.balanceOf(address(this));
     }
 
     //Function for UIs to display the current value of 1 vault share
-    function getPricePerFullShare() public view returns (uint256) {
+    function getPricePerFullShare() public view returns (uint) {
         return totalSupply == 0 ? 1e18 : totalAssets() * 1e18 / totalSupply;
     }
 
     //Calculates total amount of 'asset' held by the system. Vault, strategy and contracts it deposits in.
     
-    function totalAssets() public view override returns (uint256) {
+    function totalAssets() public view override returns (uint) {
         return asset.balanceOf(address(this)) + IStrategy(strategy).balanceOf();
     }
 
     /*//////////////////////////////////////////////////////////////
                             ADMIN FUNCTIONS 
     //////////////////////////////////////////////////////////////*/
+
+    function setDelay(uint128 _delay) external onlyAdmin{
+        if(_delay > 1800 || _delay < 600) {revert XpandrErrors.InvalidDelay();}
+        delay = _delay;
+    }
     
     //Sets the candidate for the new strat to use with this vault.
     function queueStrat(address _implementation) public onlyAdmin {
@@ -177,7 +191,7 @@ contract Xpandr4626Vault is ERC4626, AccessControl, ReentrancyGuard {
     function stuckTokens(address _token) external onlyAdmin {
         if(ERC20(_token) == asset){revert XpandrErrors.InvalidTokenOrPath();}
 
-        uint256 amount = ERC20(_token).balanceOf(address(this));
+        uint amount = ERC20(_token).balanceOf(address(this));
         ERC20(_token).safeTransfer(msg.sender, amount);
 
         emit StuckTokens(msg.sender, amount, _token);
@@ -191,8 +205,8 @@ contract Xpandr4626Vault is ERC4626, AccessControl, ReentrancyGuard {
     To be used in the context of this vault. As such, they were made void by design.
     This vault does not allow 3rd parties to deposit or withdraw for another Owner.
     */
-    function redeem(uint256 shares, address receiver, address owner) public pure override returns (uint256) {if(!false){revert XpandrErrors.UnusedFunction();}}
-    function mint(uint256 shares, address receiver) public pure override returns (uint256) {if(!false){revert XpandrErrors.UnusedFunction();}}
-    function previewMint(uint256 shares) public pure override returns (uint256){if(!false){revert XpandrErrors.UnusedFunction();}}
-    function maxRedeem(address owner) public pure override returns (uint256) {if(!false){revert XpandrErrors.UnusedFunction();}}
+    function redeem(uint shares, address receiver, address owner) public pure override returns (uint) {if(!false){revert XpandrErrors.UnusedFunction();}}
+    function mint(uint shares, address receiver) public pure override returns (uint) {if(!false){revert XpandrErrors.UnusedFunction();}}
+    function previewMint(uint shares) public pure override returns (uint){if(!false){revert XpandrErrors.UnusedFunction();}}
+    function maxRedeem(address owner) public pure override returns (uint) {if(!false){revert XpandrErrors.UnusedFunction();}}
 }

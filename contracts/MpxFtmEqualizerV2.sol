@@ -1,5 +1,8 @@
 //SPDX-License-Identifier: MIT
 
+//Example Strategy to be used with Xpandr4626 Vault
+//Includes: feeToken switch / 0% withdraw fee default / Feeds total profit to vault in USD / Harvest buffers.
+
 pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/security/Pausable.sol";
@@ -13,6 +16,10 @@ import "./interfaces/XpandrErrors.sol";
 contract MpxFtmEqualizerV2 is AccessControl, Pausable {
     using SafeTransferLib for ERC20;
 
+    /*//////////////////////////////////////////////////////////////
+                          VARIABLES & EVENTS
+    //////////////////////////////////////////////////////////////*/
+
     event Harvest(address indexed harvester);
     event SetVault(address indexed newVault);
     event SetRouterOrGauge(address indexed router, address indexed gauge);
@@ -21,7 +28,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
     event SetFeesAndRecipient(uint64 indexed withdrawFee, uint64 indexed totalFees, address indexed newRecipient);
     event RetireStrat(address indexed caller);
     event Panic(address indexed caller);
-    event MakeCustomTxn(address indexed from, address indexed to, uint256 indexed amount);
+    event CustomTx(address indexed from, uint indexed amount);
 
     // Tokens
     address public constant wftm = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
@@ -44,7 +51,6 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
     //Routes
     IEqualizerRouter.Routes[] public equalToWftmPath;
     IEqualizerRouter.Routes[] public equalToMpxPath;
-    IEqualizerRouter.Routes[] public feeTokenPath;
     IEqualizerRouter.Routes[] public customPath;
 
     // Fee Structure
@@ -52,21 +58,17 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
     uint64 public constant PLATFORM_FEE = 35;               // 3.5% Platform fee 
     uint64 public WITHDRAW_FEE = 0;                         // 0% of withdrawal amount. Kept in case of economic attacks.
     uint64 public TREASURY_FEE = 590;
-    uint64 public CALL_FEE = 125;
-    uint64 public STRAT_FEE = 285;  
+    uint64 public CALL_FEE = 120;
+    uint64 public STRAT_FEE = 290;  
     uint64 public RECIPIENT_FEE;
 
     // Controllers
-    uint64 private lastHarvest;
-    uint256 public harvestProfit;
+    uint64 internal lastHarvest;
+    uint public harvestProfit;
+    uint128 internal delay;
     bool public constant stable = false;
     uint8 public harvestOnDeposit;
 
-
-    /*//////////////////////////////////////////////////////////////
-                               EVENTS
-    //////////////////////////////////////////////////////////////*/
-   
 
     constructor(
         address _asset,
@@ -74,8 +76,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
         address _router,
         address _feeToken,
         IEqualizerRouter.Routes[] memory _equalToWftmPath,
-        IEqualizerRouter.Routes[] memory _equalToMpxPath,
-        IEqualizerRouter.Routes[] memory _feeTokenPath
+        IEqualizerRouter.Routes[] memory _equalToMpxPath
     ) {
         asset = _asset;
         gauge = _gauge;
@@ -90,10 +91,6 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
             equalToMpxPath.push(_equalToMpxPath[i]);
         }
 
-        for (uint i; i < _feeTokenPath.length; ++i) {
-            feeTokenPath.push(_feeTokenPath[i]);
-        }
-
         rewardTokens.push(equal);
         harvestOnDeposit = 0;
         lastHarvest = uint64(block.timestamp);
@@ -104,21 +101,22 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
     /*//////////////////////////////////////////////////////////////
                           DEPOSIT/WITHDRAW
     //////////////////////////////////////////////////////////////*/
+
     function deposit() public whenNotPaused {
         if(msg.sender != vault){revert XpandrErrors.NotVault();}
         _deposit();
     }
 
     function _deposit() internal whenNotPaused {
-        uint256 assetBal = ERC20(asset).balanceOf(address(this));
+        uint assetBal = ERC20(asset).balanceOf(address(this));
         if(msg.sender == vault){harvestProfit = 0;}
         IEqualizerGauge(gauge).deposit(assetBal);
     }
 
-    function withdraw(uint256 _amount) external {
+    function withdraw(uint _amount) external {
         if(msg.sender != vault){revert  XpandrErrors.NotVault();}
 
-        uint256 assetBal = ERC20(asset).balanceOf(address(this));
+        uint assetBal = ERC20(asset).balanceOf(address(this));
 
         if (assetBal < _amount) {
             IEqualizerGauge(gauge).withdraw(_amount - assetBal);
@@ -129,14 +127,14 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
             assetBal = _amount;
         }
         if(WITHDRAW_FEE > 0){
-            uint256 withdrawalFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR; 
+            uint withdrawalFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR; 
             ERC20(asset).safeTransfer(vault, assetBal - withdrawalFeeAmount);
         } else {ERC20(asset).safeTransfer(vault, assetBal);}
     }
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
-        if(lastHarvest < uint64(block.timestamp + 600)){revert XpandrErrors.UnderTimeLock();}
+        if(lastHarvest < uint64(block.timestamp) + delay ){revert XpandrErrors.UnderTimeLock();}
         _harvest(msg.sender);
     }
 
@@ -146,8 +144,8 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
         }
 
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
-        uint256 outputBal = ERC20(equal).balanceOf(address(this));
-        (uint256 profitBal,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
+        uint outputBal = ERC20(equal).balanceOf(address(this));
+        (uint profitBal,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
         harvestProfit = harvestProfit + profitBal;
 
         if (outputBal > 0 ) {
@@ -163,24 +161,34 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
                           INTERNAL HELPERS
     //////////////////////////////////////////////////////////////*/
     function _chargeFees(address caller) internal {                   
-       uint256 toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
-
-        if(feeToken != equal){IEqualizerRouter(router).swapExactTokensForTokens(toFee, 0, feeTokenPath, address(this), uint64(block.timestamp));}
+         uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, stable, address(this), uint64(block.timestamp));
     
-        uint256 feeBal = ERC20(feeToken).balanceOf(address(this));   
+        uint feeBal = ERC20(feeToken).balanceOf(address(this));
 
-        if(feeToken == equal){ _distroRewardFee(feeBal, caller);
-        } else {_distroFee(feeBal, caller);}
+        uint callFee = feeBal * CALL_FEE >> FEE_DIVISOR;
+        ERC20(feeToken).transfer(caller, callFee);
+
+        if(RECIPIENT_FEE >0){
+        uint recipientFee = feeBal * RECIPIENT_FEE >> FEE_DIVISOR;
+        ERC20(feeToken).safeTransfer(feeRecipient, recipientFee);
+        }
+
+        uint treasuryFee = feeBal * TREASURY_FEE >> FEE_DIVISOR;
+        ERC20(feeToken).transfer(treasury, treasuryFee);
+                                                
+        uint stratFee = feeBal * STRAT_FEE >> FEE_DIVISOR;
+        ERC20(feeToken).transfer(strategist, stratFee);
     }
 
     function _addLiquidity() internal {
-        uint256 equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
+        uint equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
 
         IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToWftmPath, address(this), uint64(block.timestamp));
         IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToMpxPath, address(this), uint64(block.timestamp));
 
-        uint256 t1Bal = ERC20(wftm).balanceOf(address(this));
-        uint256 t2Bal = ERC20(mpx).balanceOf(address(this));
+        uint t1Bal = ERC20(wftm).balanceOf(address(this));
+        uint t2Bal = ERC20(mpx).balanceOf(address(this));
 
         IEqualizerRouter(router).addLiquidity(wftm, mpx, stable, t1Bal, t2Bal, 1, 1, address(this), uint64(block.timestamp));
     }
@@ -190,9 +198,9 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
     //////////////////////////////////////////////////////////////*/
 
     //Determines the amount of reward in native upon calling the harvest function
-    function callReward() public view returns (uint256) {
-        uint256 outputBal = rewardBalance();
-        uint256 wrappedOut;
+    function callReward() public view returns (uint) {
+        uint outputBal = rewardBalance();
+        uint wrappedOut;
         if (outputBal > 0) {
             (wrappedOut,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
         } 
@@ -200,22 +208,22 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
     }
 
     //Returns rewards unharvested
-    function rewardBalance() public view returns (uint256) {
+    function rewardBalance() public view returns (uint) {
         return IEqualizerGauge(gauge).earned(equal, address(this));
     }
 
     //Return the total underlying 'asset' held by the strat */
-    function balanceOf() public view returns (uint256) {
+    function balanceOf() public view returns (uint) {
         return balanceOfWant() + (balanceOfPool());
     }
 
     //Return 'asset' balance this contract holds
-    function balanceOfWant() public view returns (uint256) {
+    function balanceOfWant() public view returns (uint) {
         return ERC20(asset).balanceOf(address(this));
     }
 
     //Return how much 'asset' the strategy has working in the farm
-    function balanceOfPool() public view returns (uint256) {
+    function balanceOfPool() public view returns (uint) {
         return IEqualizerGauge(gauge).balanceOf(address(this));
     }
 
@@ -299,15 +307,10 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
     }
 
 
-   function setFeeToken(address _feeToken, IEqualizerRouter.Routes[] memory _feeTokenPath) external onlyAdmin {
-       if(_feeToken == address(0) || _feeTokenPath.length == 0){revert XpandrErrors.InvalidTokenOrPath();}
+   function setFeeToken(address _feeToken) external onlyAdmin {
+       if(_feeToken == address(0) && _feeToken == feeToken){revert XpandrErrors.InvalidTokenOrPath();}
        feeToken = _feeToken;
-       delete feeTokenPath;
-
-       for (uint i; i < _feeTokenPath.length; ++i) {
-           feeTokenPath.push(_feeTokenPath[i]);
-        }
-
+   
        ERC20(_feeToken).safeApprove(router, 0);
        ERC20(_feeToken).safeApprove(router, type(uint).max);
        emit SetFeeToken(_feeToken);
@@ -318,6 +321,12 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
         require(_harvestOnDeposit == 0 || _harvestOnDeposit == 1);
         harvestOnDeposit = _harvestOnDeposit;
     } 
+
+     function setDelay(uint128 _delay) external onlyAdmin{
+        if(_delay > 1800 || _delay < 600) {revert XpandrErrors.InvalidDelay();}
+        delay = _delay;
+    }
+    
     /*//////////////////////////////////////////////////////////////
                                UTILS
     //////////////////////////////////////////////////////////////*/
@@ -325,21 +334,21 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
     /** This function exists incase tokens that do not match the {asset} of this strategy accrue.  For example: an amount of
     tokens sent to this address in the form of an airdrop of a different token type. This will allow conversion
     said token to the {output} token of the strategy, allowing the amount to be paid out to stakers in the next harvest. */ 
-    function makeCustomTxn(address [][] memory _tokens, bool[] calldata _stable) external onlyAdmin {
-        for (uint i; i < _tokens.length; ++i) {
-            customPath.push(IEqualizerRouter.Routes({
-                from: _tokens[i][0],
-                to: _tokens[i][1],
-                stable: _stable[i]
-            }));
-        }
-        uint256 bal = ERC20(_tokens[0][0]).balanceOf(address(this));
+    function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
+        uint bal;
+        if(_amount == 0) {bal = ERC20(_token).balanceOf(address(this));}
+        else {bal = _amount;}
 
-        ERC20(_tokens[0][0]).safeApprove(router, 0);
-        ERC20(_tokens[0][0]).safeApprove(router, type(uint).max);
-        IEqualizerRouter(router).swapExactTokensForTokens(bal, 0, customPath, address(this), uint64(block.timestamp + 600));
+        delete customPath;
+        for (uint i; i < _path.length; ++i) {
+            customPath.push(_path[i]);
+        }
+
+        ERC20(_token).safeApprove(router, 0);
+        ERC20(_token).safeApprove(router, type(uint).max);
+        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 0, customPath, address(this), uint64(block.timestamp));
    
-        emit MakeCustomTxn(_tokens[0][0], _tokens[0][_tokens.length - 1], bal);
+        emit CustomTx(_token, bal);
     }
 
     function _subAllowance() internal {
@@ -362,39 +371,4 @@ contract MpxFtmEqualizerV2 is AccessControl, Pausable {
             _harvest(tx.origin);
     }
 
-    //Incase fee is taken in native or non reward token
-    function _distroFee(uint256 feeBal, address caller) internal {
-        uint256 callFee = feeBal * CALL_FEE >> FEE_DIVISOR;        
-        ERC20(feeToken).safeTransfer(caller, callFee);
-
-        if(RECIPIENT_FEE >0){
-        uint256 recipientFee = feeBal * RECIPIENT_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(feeRecipient, recipientFee);
-        }
-
-        uint256 treasuryFee = feeBal * TREASURY_FEE >> FEE_DIVISOR;        
-        ERC20(feeToken).safeTransfer(treasury, treasuryFee);
-                                                
-        uint256 stratFee = feeBal * STRAT_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(strategist, stratFee); 
-    }
-
-    //Incase fee is taken in reward token
-    function _distroRewardFee(uint256 feeBal, address caller) internal {
-        uint256 rewardFee = feeBal * PLATFORM_FEE >> FEE_DIVISOR; 
-    
-        uint256 callFee = rewardFee * CALL_FEE >> FEE_DIVISOR;        
-        ERC20(feeToken).safeTransfer(caller, callFee);
-
-        if(RECIPIENT_FEE >0){        
-        uint256 recipientFee = rewardFee * RECIPIENT_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(feeRecipient, recipientFee);
-        }
-
-        uint256 treasuryFee = rewardFee * TREASURY_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(treasury, treasuryFee);
-                                                
-        uint256 stratFee = rewardFee * STRAT_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(strategist, stratFee); 
-    }
 }

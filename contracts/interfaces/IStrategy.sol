@@ -9,15 +9,15 @@ interface IStrategy {
     function asset() external view returns (ERC20);
     function deposit() external;
     function afterDeposit() external;
-    function withdraw(uint256) external;
-    function balanceOf() external view returns (uint256);
+    function withdraw(uint) external;
+    function balanceOf() external view returns (uint);
     function harvest() external;
     function retireStrat() external;
     function panic() external;
     function pause() external;
     function unpause() external;
     function paused() external view returns (bool);
-    function harvestOnDeposit() external view returns(uint256);
-    function harvestProfit() external view returns(uint256);
+    function harvestOnDeposit() external view returns(uint);
+    function harvestProfit() external view returns(uint);
 }
 

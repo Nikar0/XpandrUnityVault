@@ -2,10 +2,10 @@
 
 /** 
 
-@title - XpandrUnityVault
+@title  - XpandrUnityVault
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
-          Includes feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers.
+          Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers.
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 
@@ -37,12 +37,12 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
                           VARIABLES & EVENTS
     //////////////////////////////////////////////////////////////*/
     event Harvest(address indexed harvester);
-    event SetFeeRecipient(address indexed newRecipient);
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
     event SetFeeToken(address indexed newFeeToken);
+    event SetFeeRecipient(address indexed newRecipient);
     event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
     event Panic(address indexed caller);
-    event MakeCustomTxn(address indexed from, uint indexed amount);
+    event CustomTx(address indexed from, uint indexed amount);
     event SetFeesAndRecipient(uint64 indexed withdrawFee, uint64 indexed totalFees, address indexed newRecipient);
     event StuckTokens(address indexed caller, uint indexed amount, address indexed token);
     
@@ -71,7 +71,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     // Fee Structure
     uint64 public constant FEE_DIVISOR = 500;               //Halved for cheaper divisions with >> 500 instead of / 1000
     uint64 public constant PLATFORM_FEE = 35;               // 3.5% Platform fee 
-    uint64 public WITHDRAW_FEE = 0;                         // 0% withdrawal fee. Logic kept in case spam/economic attacks bypass safeguards.
+    uint64 public WITHDRAW_FEE = 0;                         // 0% withdrawal fee. Logic kept in case spam/economic attacks bypass buffers.
     uint64 public TREASURY_FEE = 590;
     uint64 public CALL_FEE = 120;
     uint64 public STRAT_FEE = 290;  
@@ -369,18 +369,20 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     /** This function exists incase tokens that do not match the {asset} of this strategy accrue.  For example: an amount of
     tokens sent to this address in the form of an airdrop of a different token type. This will allow conversion
     said token to the {output} token of the strategy, allowing the amount to be paid out to stakers in the next harvest. */ 
-    function makeCustomTxn(address _token, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
+    function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
+        uint bal;
+        if(_amount == 0) {bal = ERC20(_token).balanceOf(address(this));}
+        else {bal = _amount;}
         delete customPath;
         for (uint i; i < _path.length; ++i) {
             customPath.push(_path[i]);
         }
-        uint bal = ERC20(_token).balanceOf(address(this));
 
         ERC20(_token).safeApprove(router, 0);
         ERC20(_token).safeApprove(router, type(uint).max);
         IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 0, customPath, address(this), uint64(block.timestamp));
    
-        emit MakeCustomTxn(_token, bal);
+        emit CustomTx(_token, bal);
     }
 
     function _subAllowance() internal {

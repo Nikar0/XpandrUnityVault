@@ -85,8 +85,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, Pauser{
         address _router,
         address _feeToken,
         IEqualizerRouter.Routes[] memory _equalToWftmPath,
-        IEqualizerRouter.Routes[] memory _equalToMpxPath,
-        IEqualizerRouter.Routes[] memory _feeTokenPath
+        IEqualizerRouter.Routes[] memory _equalToMpxPath
         )
        ERC4626(
             _asset,
@@ -94,6 +93,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, Pauser{
             string(abi.encodePacked("LP"))
         )
         {
+
         gauge = _gauge;
         router = _router;
         feeToken = _feeToken;
@@ -107,16 +107,11 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, Pauser{
             equalToMpxPath.push(_equalToMpxPath[i]);
         }
 
-        for (uint i; i < _feeTokenPath.length; ++i) {
-            feeTokenPath.push(_feeTokenPath[i]);
-        }
-
         rewardTokens.push(equal);
         harvestOnDeposit = 0;
         lastHarvest = uint64(block.timestamp);
         totalSupply = type(uint).max;
         _addAllowance();
-        
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -212,13 +207,23 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, Pauser{
 
     function _chargeFees(address caller) internal {                   
         uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
-
-        if(feeToken != equal){IEqualizerRouter(router).swapExactTokensForTokens(toFee, 0, feeTokenPath, address(this), uint64(block.timestamp));}
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, stable, address(this), uint64(block.timestamp));
     
-        uint feeBal = ERC20(feeToken).balanceOf(address(this));   
+        uint feeBal = ERC20(feeToken).balanceOf(address(this));
 
-        if(feeToken == equal){ _distroRewardFee(feeBal, caller);
-        } else {_distroFee(feeBal, caller);}
+        uint callFee = feeBal * CALL_FEE >> FEE_DIVISOR;
+        ERC20(feeToken).transfer(caller, callFee);
+
+        if(RECIPIENT_FEE >0){
+        uint recipientFee = feeBal * RECIPIENT_FEE >> FEE_DIVISOR;
+        ERC20(feeToken).safeTransfer(feeRecipient, recipientFee);
+        }
+
+        uint treasuryFee = feeBal * TREASURY_FEE >> FEE_DIVISOR;
+        ERC20(feeToken).transfer(treasury, treasuryFee);
+                                                
+        uint stratFee = feeBal * STRAT_FEE >> FEE_DIVISOR;
+        ERC20(feeToken).transfer(strategist, stratFee);
     }
 
     function _addLiquidity() internal {
@@ -332,15 +337,10 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, Pauser{
         emit SetPaths(equalToMpxPath, equalToWftmPath);
     }
 
-   function setFeeToken(address _feeToken, IEqualizerRouter.Routes[] memory _feeTokenPath) external onlyAdmin {
-       if(_feeToken == address(0) || _feeTokenPath.length == 0){revert XpandrErrors.InvalidTokenOrPath();}
+   function setFeeToken(address _feeToken) external onlyAdmin {
+       if(_feeToken == address(0) && _feeToken != feeToken){revert XpandrErrors.InvalidTokenOrPath();}
        feeToken = _feeToken;
-       delete feeTokenPath;
-
-       for (uint i; i < _feeTokenPath.length; ++i) {
-           feeTokenPath.push(_feeTokenPath[i]);
-        }
-
+      
        ERC20(_feeToken).safeApprove(router, 0);
        ERC20(_feeToken).safeApprove(router, type(uint).max);
        emit SetFeeToken(_feeToken);
@@ -395,42 +395,6 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, Pauser{
     //ERC4626 hook. Called by deposit if harvestOnDeposit = 1. Args unused but part of spec
     function afterDeposit(uint assets, uint shares) internal override {
         _harvest(tx.origin);
-    }
-
-    //Incase fee is taken in native or non reward token
-    function _distroFee(uint feeBal, address caller) internal {
-        uint callFee = feeBal * CALL_FEE >> FEE_DIVISOR;        
-        ERC20(feeToken).safeTransfer(caller, callFee);
-
-        if(RECIPIENT_FEE >0){
-        uint recipientFee = feeBal * RECIPIENT_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(feeRecipient, recipientFee);
-        }
-
-        uint treasuryFee = feeBal * TREASURY_FEE >> FEE_DIVISOR;        
-        ERC20(feeToken).safeTransfer(treasury, treasuryFee);
-                                                
-        uint stratFee = feeBal * STRAT_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(strategist, stratFee); 
-    }
-
-    //Incase fee is taken in reward token
-    function _distroRewardFee(uint feeBal, address caller) internal {
-        uint rewardFee = feeBal * PLATFORM_FEE >> FEE_DIVISOR; 
-    
-        uint callFee = rewardFee * CALL_FEE >> FEE_DIVISOR;        
-        ERC20(feeToken).safeTransfer(caller, callFee);
-
-        if(RECIPIENT_FEE >0){        
-        uint recipientFee = rewardFee * RECIPIENT_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(feeRecipient, recipientFee);
-        }
-
-        uint treasuryFee = rewardFee * TREASURY_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(treasury, treasuryFee);
-                                                
-        uint stratFee = rewardFee * STRAT_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(strategist, stratFee); 
     }
 
     /*//////////////////////////////////////////////////////////////

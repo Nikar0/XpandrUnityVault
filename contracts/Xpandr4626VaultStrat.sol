@@ -6,9 +6,9 @@
 @notice Minimal, streamlined, security and gas considerate unified Vault + Stragegy contract
 
 
-Vault based on EIP 4626 by @Joey_Stantoro, @transmissions11, et all
+Vault based on EIP 4626 by @joey_santoro, @transmissions11, et all
 
-www.github.com/nikar0/Xpandr4626 - www.twitter.com/Nikar0_
+www.github.com/nikar0/Xpandr4626
 **/
 
 pragma solidity 0.8.17;

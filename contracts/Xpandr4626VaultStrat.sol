@@ -59,7 +59,6 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, Pauser{
     // Routes
     IEqualizerRouter.Routes[] public equalToWftmPath;
     IEqualizerRouter.Routes[] public equalToMpxPath;
-    IEqualizerRouter.Routes[] public feeTokenPath;
     IEqualizerRouter.Routes[] public customPath;
 
     // Fee Structure

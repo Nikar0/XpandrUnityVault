@@ -3,7 +3,7 @@
 /** 
 @title Xpandr4626Vault
 @author Nikar0 
-@notice Minimal, streamlined and gas considerate unified Vault + Stragegy contract
+@notice Minimal, streamlined security and gas considerate unified Vault + Stragegy contract
 
 
 Vault based on EIP 4626 by @Joey_Stantoro, @transmissions11, et all
@@ -44,7 +44,7 @@ contract Xpandr4626VaultStrat is ERC4626, AccessControl, Pauser{
     address public constant equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
     address public constant mpx = address(0x66eEd5FF1701E6ed8470DC391F05e27B1d0657eb);
     address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit returns USDC value
-    address public feeToken;         //Switch for which token protocol receives fees in. In mind for Native, Reward, Stable.
+    address public feeToken;         //Switch for which token protocol receives fees in. In mind for Native & Stable. Streamlines POL portfolio.
     address[] public rewardTokens;
 
     // 3rd party contracts

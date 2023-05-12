@@ -282,7 +282,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         if(_withdrawFee > 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         //FeeDivisor is halved for divisions with >> 500 instead of /1000. As such, must * 2 for correct condition check here.
-        if(sum > FEE_DIVISOR * 2){revert XpandrErrors.OverCap();}
+        if(sum > uint16(1000)){revert XpandrErrors.OverCap();}
         if(feeRecipient != _recipient){feeRecipient = _recipient;}
 
         CALL_FEE = _callFee;

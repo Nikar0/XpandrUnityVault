@@ -1,8 +1,10 @@
 //SPDX-License-Identifier: MIT
 
+//Testing TODO on this contract.
+
 /** 
 
-@title  - XpandrUnityVault
+@title  - XpandrUnityVault2
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
           Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers.
@@ -58,9 +60,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     address public router;
 
     // Xpandr addresses
-    address public constant harvester = address(0xDFAA88D5d068370689b082D34d7B546CbF393bA9);
-    address public constant treasury = address(0xE37058057B0751bD2653fdeB27e8218439e0f726);
-    address public feeRecipient;
+    address public xpandrRecipient;
 
     // Paths
     IEqualizerRouter.Routes[] public equalToWftmPath;
@@ -71,17 +71,15 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     uint64 public constant FEE_DIVISOR = 500;               // Halved for cheaper divisions with >> 500 instead of / 1000
     uint64 public constant PLATFORM_FEE = 35;               // 3.5% Platform fee 
     uint64 public WITHDRAW_FEE = 0;                         // 0% withdrawal fee. Logic kept in case spam/economic attacks bypass buffers.
-    uint64 public TREASURY_FEE = 590;
     uint64 public CALL_FEE = 120;
-    uint64 public STRAT_FEE = 290;  
-    uint64 public RECIPIENT_FEE;
+    uint64 public XPANDR_FEE = 880;
 
     // Controllers
-    uint64 internal lastHarvest;                            // Safeguard only allows harvest being called if > delay
-    uint public vaultProfit;                                // Excludes performance fees
     uint64 public delay;
+    uint64 internal lastHarvest;                            // Safeguard only allows harvest being called if > delay
     bool internal constant stable = false;
-    uint8 internal harvestOnDeposit;                                    
+    uint8 internal harvestOnDeposit;   
+    uint public vaultProfit;                                // Excludes performance fees                             
     mapping(address => uint64) internal lastUserDeposit;    //Safeguard only allows same user deposits if > delay
 
     constructor(
@@ -89,6 +87,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         address _gauge,
         address _router,
         address _feeToken,
+        address _xpandrRecipient,
         IEqualizerRouter.Routes[] memory _equalToWftmPath,
         IEqualizerRouter.Routes[] memory _equalToMpxPath
         )
@@ -101,6 +100,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         gauge = _gauge;
         router = _router;
         feeToken = _feeToken;
+        xpandrRecipient = _xpandrRecipient;
         delay = 600; // 10 mins
 
         for (uint i; i < _equalToWftmPath.length; ++i) {
@@ -121,6 +121,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     /*//////////////////////////////////////////////////////////////
                           DEPOSIT/WITHDRAW
     //////////////////////////////////////////////////////////////*/
+
      function depositAll() external {
         deposit(asset.balanceOf(msg.sender), msg.sender);
     }
@@ -190,6 +191,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     /*//////////////////////////////////////////////////////////////
                           INTERNAL HELPERS
     //////////////////////////////////////////////////////////////*/
+
     // Deposits funds in the farm
     function _earn() internal {
         uint assetBal = asset.balanceOf(address(this));
@@ -217,16 +219,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         uint callFee = feeBal * CALL_FEE >> FEE_DIVISOR;
         ERC20(feeToken).transfer(caller, callFee);
 
-        if(RECIPIENT_FEE > 0){
-        uint recipientFee = feeBal * RECIPIENT_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(feeRecipient, recipientFee);
-        }
-
-        uint treasuryFee = feeBal * TREASURY_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).transfer(treasury, treasuryFee);
-                                                
-        uint stratFee = feeBal * STRAT_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).transfer(strategist, stratFee);
+        uint xpandrFee = feeBal * XPANDR_FEE >> FEE_DIVISOR;
+        ERC20(feeToken).safeTransfer(xpandrRecipient, xpandrFee);
     }
 
     function _addLiquidity() internal {
@@ -303,19 +297,17 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
                                SETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function setFeesAndRecipient(uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyOwner {
+    function setFeesAndRecipient(uint64 _callFee, uint64 _withdrawFee, uint64 _recipientFee, address _recipient) external onlyOwner {
         if(_withdrawFee > 1){revert XpandrErrors.OverCap();}
-        uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
+        uint64 sum = _callFee + _recipientFee;
         //FeeDivisor is halved for cheaper divisions with >> 500 instead of  1000. As such, using the correct condition check here.
         if(sum > uint16(1000)){revert XpandrErrors.OverCap();}
-        if(feeRecipient != _recipient){feeRecipient = _recipient;}
+        if(xpandrRecipient != _recipient){xpandrRecipient = _recipient;}
 
         CALL_FEE = _callFee;
-        STRAT_FEE = _stratFee;
         WITHDRAW_FEE = _withdrawFee;
-        TREASURY_FEE = _treasuryFee;
-        RECIPIENT_FEE = _recipientFee;
-        emit SetFeesAndRecipient(WITHDRAW_FEE, sum, feeRecipient);
+        XPANDR_FEE = _recipientFee;
+        emit SetFeesAndRecipient(WITHDRAW_FEE, sum, xpandrRecipient);
     }
 
     function setRouterOrGauge(address _router, address _gauge) external onlyOwner {
@@ -363,9 +355,9 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
 
     /*//////////////////////////////////////////////////////////////
                                UTILS
-    //////////////////////////////////////////////////////////////*/
+    //////////////////////////////////////////////////////////////
 
-    /** This function exists incase tokens that do not match the {asset} of this strategy accrue.  For example: an amount of
+    This function exists incase tokens that do not match the {asset} of this strategy accrue.  For example: an amount of
     tokens sent to this address in the form of an airdrop of a different token type. This will allow conversion
     said token to the {output} token of the strategy, allowing the amount to be paid out to stakers in the next harvest. */ 
     function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
@@ -403,13 +395,13 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         _harvest(tx.origin);
     }
 
-    /*//////////////////////////////////////////////////////////////
+    /*/////////////////////////////////////////////////////////////
                                UNUSED
-    //////////////////////////////////////////////////////////////*/
-    /**Following functions are included as per EIP-4626 standard but are not meant
+    //////////////////////////////////////////////////////////////
+    
+    Following functions are included as per EIP-4626 standard but are not meant
     To be used in the context of this vault. As such, they were made void by design.
-    This vault does not allow 3rd parties to deposit or withdraw for another Owner.
-    */
+    This vault does not allow 3rd parties to deposit or withdraw for another Owner.*/
     function redeem(uint shares, address receiver, address owner) public pure override returns (uint) {if(!false){revert XpandrErrors.UnusedFunction();}}
     function mint(uint shares, address receiver) public pure override returns (uint) {if(!false){revert XpandrErrors.UnusedFunction();}}
     function previewMint(uint shares) public pure override returns (uint){if(!false){revert XpandrErrors.UnusedFunction();}}

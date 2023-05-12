@@ -1,2 +1,10 @@
 Removed reentrancy guard to instead use correct checks/balances.
 100X check if it's done correctly. Fight ptsd.
+
+Consider changing charge fees from sending to treasury/strat/recipient
+To sending to a protocol owned contract that splits receives funds accordingly & distros.
+
+Pros: Easier control over receiving addresses & split changes without cluttering main contract. Cuts 2 transfers, making overall harvest cost cheaper.
+
+Cons: Protocol operational cost in 
+

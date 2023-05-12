@@ -130,10 +130,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
     function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
         if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp) + delay) {revert XpandrErrors.UnderTimeLock();}}
-        if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
+        if(msg.sender != receiver){revert XpandrErrors.NotAccountOwner();}
 
         shares = previewDeposit(assets);
-        if(shares == 0){revert XpandrErrors.ZeroAmount();}
+        if(assets ==0 || shares == 0){revert XpandrErrors.ZeroAmount();}
         lastUserDeposit[msg.sender] = uint64(block.timestamp);
 
         asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
@@ -148,12 +148,12 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         withdraw(asset.balanceOf(msg.sender), msg.sender, msg.sender);
     }
 
-    // Withdraw 'asset' from farm into vault % sends to owner.
+    // Withdraw 'asset' from farm into vault & sends to receiver.
     function withdraw(uint assets, address receiver, address owner) public override returns (uint shares) {
         if(msg.sender != receiver && msg.sender != owner){revert XpandrErrors.NotAccountOwner();}
         shares = previewWithdraw(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
-        if(shares > ERC20(address(this)).balanceOf(msg.sender)){revert XpandrErrors.OverBalance();}
+        if(shares > ERC20(address(this)).balanceOf(msg.sender)){revert XpandrErrors.OverCap();}
        
         _burn(owner, shares);
         _collect(assets);
@@ -206,7 +206,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         uint assetBal = asset.balanceOf(address(this));
         if (assetBal < _amount) {
             IEqualizerGauge(gauge).withdraw(_amount - assetBal);
-            assetBal = asset.balanceOf(address(this));             
         }
     }
 
@@ -219,7 +218,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         uint callFee = feeBal * CALL_FEE >> FEE_DIVISOR;
         ERC20(feeToken).transfer(caller, callFee);
 
-        if(RECIPIENT_FEE >0){
+        if(RECIPIENT_FEE > 0){
         uint recipientFee = feeBal * RECIPIENT_FEE >> FEE_DIVISOR;
         ERC20(feeToken).safeTransfer(feeRecipient, recipientFee);
         }
@@ -306,10 +305,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     //////////////////////////////////////////////////////////////*/
 
     function setFeesAndRecipient(uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyOwner {
-        if(_withdrawFee > 1){revert XpandrErrors.OverMaxFee();}
+        if(_withdrawFee > 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         //FeeDivisor is halved for cheaper divisions with >> 500 instead of / 1000. As such, must * 2 for correct condition check here.
-        if(sum > FEE_DIVISOR * 2){revert XpandrErrors.OverFeeDiv();}
+        if(sum > FEE_DIVISOR * 2){revert XpandrErrors.OverCap();}
         if(feeRecipient != _recipient){feeRecipient = _recipient;}
 
         CALL_FEE = _callFee;
@@ -321,6 +320,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     }
 
     function setRouterOrGauge(address _router, address _gauge) external onlyOwner {
+        if(_router == address(0) || _gauge == address(0)){revert XpandrErrors.ZeroAddress();}
         if(_router != router){router = _router;}
         if(_gauge != gauge){gauge = _gauge;}
         emit SetRouterOrGauge(router, gauge);
@@ -343,7 +343,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     }
 
    function setFeeToken(address _feeToken) external onlyAdmin {
-       if(_feeToken == address(0) && _feeToken != feeToken){revert XpandrErrors.InvalidTokenOrPath();}
+       if(_feeToken == address(0) || _feeToken == feeToken){revert XpandrErrors.InvalidTokenOrPath();}
        feeToken = _feeToken;
       
        ERC20(_feeToken).safeApprove(router, 0);
@@ -353,6 +353,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
 
     // Sets harvestOnDeposit
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
+        if(harvestOnDeposit != 0 || harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
         require(_harvestOnDeposit == 0 || _harvestOnDeposit == 1);
         harvestOnDeposit = _harvestOnDeposit;
     } 

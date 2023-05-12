@@ -126,7 +126,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     }
 
     function withdraw(uint _amount) external {
-        if(msg.sender != vault){revert  XpandrErrors.NotVault();}
+        if(msg.sender != vault){revert XpandrErrors.NotVault();}
 
         uint assetBal = ERC20(asset).balanceOf(address(this));
 
@@ -274,11 +274,12 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     /*//////////////////////////////////////////////////////////////
                                SETTERS
     //////////////////////////////////////////////////////////////*/
+    
     function setFeesAndRecipient(uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyAdmin {
-        if(_withdrawFee > 1){revert XpandrErrors.OverMaxFee();}
+        if(_withdrawFee > 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         //FeeDivisor is halved for divisions with >> 500 instead of /1000. As such, must * 2 for correct condition check here.
-        if(sum > FEE_DIVISOR * 2){revert XpandrErrors.OverFeeDiv();}
+        if(sum > FEE_DIVISOR * 2){revert XpandrErrors.OverCap();}
         if(feeRecipient != _recipient){feeRecipient = _recipient;}
 
         CALL_FEE = _callFee;
@@ -290,13 +291,13 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         emit SetFeesAndRecipient(WITHDRAW_FEE, sum, feeRecipient);
     }
 
-    // Sets the vault connected to this strategy
     function setVault(address _vault) external onlyOwner {
         vault = _vault;
         emit SetVault(_vault);
     }
 
-    function setRouterOrGauge(address _router, address _gauge) external onlyAdmin {
+    function setRouterOrGauge(address _router, address _gauge) external onlyOwner {
+        if(_router == address(0) || _gauge == address(0)){revert XpandrErrors.ZeroAddress();}
         if(_router != router){router = _router;}
         if(_gauge != gauge){gauge = _gauge;}
         emit SetRouterOrGauge(router, gauge);
@@ -328,13 +329,13 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
        emit SetFeeToken(_feeToken);
     }
 
-    // Sets harvestOnDeposit
+    
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
         require(_harvestOnDeposit == 0 || _harvestOnDeposit == 1);
         harvestOnDeposit = _harvestOnDeposit;
     } 
 
-     function setDelay(uint128 _delay) external onlyAdmin{
+    function setDelay(uint128 _delay) external onlyAdmin{
         if(_delay > 1800 || _delay < 600) {revert XpandrErrors.InvalidDelay();}
         delay = _delay;
     }

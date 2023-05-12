@@ -119,7 +119,7 @@ contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
        if(msg.sender != receiver && msg.sender != owner){revert XpandrErrors.NotAccountOwner();}
         shares = previewWithdraw(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
-        if(shares > ERC20(address(this)).balanceOf(msg.sender)){revert XpandrErrors.OverBalance();}
+        if(shares > ERC20(address(this)).balanceOf(msg.sender)){revert XpandrErrors.OverCap();}
        
         _burn(owner, shares);
         strategy.withdraw(assets);

@@ -8,9 +8,7 @@ contract XpandrErrors {
     error InvalidDelay();
     error NotAccountOwner();
     error InvalidProposal();
-    error OverMaxFee();
-    error OverFeeDiv();
-    error OverBalance();
+    error OverCap();
     error ZeroAddress();
     error UnderTimeLock();
     error InvalidTokenOrPath();

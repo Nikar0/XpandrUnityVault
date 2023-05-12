@@ -57,7 +57,7 @@ abstract contract AccessControl {
     function setStrategist(address _newStrategist) external virtual {
         if(msg.sender != strategist){revert NotStrategist();}
         strategist = _newStrategist;
-        emit SetStrategist(msg.sender, _newStrategist);
+        emit SetStrategist(msg.sender, strategist);
     }
 
     function checkOwner() internal virtual {

@@ -116,12 +116,12 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
 
     function deposit() public whenNotPaused {
         if(msg.sender != vault){revert XpandrErrors.NotVault();}
+        harvestProfit = 0;
         _deposit();
     }
 
     function _deposit() internal whenNotPaused {
         uint assetBal = ERC20(asset).balanceOf(address(this));
-        if(msg.sender == vault){harvestProfit = 0;}
         IEqualizerGauge(gauge).deposit(assetBal);
     }
 
@@ -158,8 +158,8 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
         uint outputBal = ERC20(equal).balanceOf(address(this));
 
-        uint toProfit = outputBal - (outputBal  * PLATFORM_FEE >> FEE_DIVISOR);
-        (uint profitBal,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, wftm);
+        uint bal = outputBal - (outputBal * PLATFORM_FEE >> FEE_DIVISOR);
+        (uint profitBal,) = IEqualizerRouter(router).getAmountOut(bal, equal, wftm);
         harvestProfit = harvestProfit + profitBal;
 
         if (outputBal > 0 ) {
@@ -175,7 +175,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
                           INTERNAL HELPERS
     //////////////////////////////////////////////////////////////*/
     function _chargeFees(address caller) internal {                   
-         uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
+        uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
         IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, stable, address(this), uint64(block.timestamp));
     
         uint feeBal = ERC20(feeToken).balanceOf(address(this));

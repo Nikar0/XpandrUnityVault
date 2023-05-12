@@ -181,9 +181,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
         uint outputBal = ERC20(equal).balanceOf(address(this));
 
-        (uint profitBal,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, usdc);
-        vaultProfit = vaultProfit + profitBal;
-
         if (outputBal > 0 ) {
             _chargeFees(caller);
             _addLiquidity();
@@ -212,6 +209,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     function _chargeFees(address caller) internal {                   
         uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
         IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, stable, address(this), uint64(block.timestamp));
+
+        uint newProfit = ERC20(equal).balanceOf(address(this));
+        (uint profitBal,) = IEqualizerRouter(router).getAmountOut(newProfit, equal, usdc);
+        vaultProfit = vaultProfit + profitBal;
     
         uint feeBal = ERC20(feeToken).balanceOf(address(this));
 

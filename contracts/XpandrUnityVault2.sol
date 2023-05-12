@@ -32,7 +32,7 @@ import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
 import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
 import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 
-contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
+contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
     using SafeTransferLib for ERC20;
 
     /*//////////////////////////////////////////////////////////////

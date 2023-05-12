@@ -6,6 +6,7 @@ pragma solidity >=0.8.0 <=0.9.0;
  */
 
  error NoAuth();
+ error NotStrategist();
 
 abstract contract AccessControl {
     /*//////////////////////////////////////////////////////////////
@@ -53,7 +54,8 @@ abstract contract AccessControl {
         emit OwnershipTransferred(msg.sender, newOwner);
     }
 
-    function setStrategist(address _newStrategist) external virtual onlyOwner {
+    function setStrategist(address _newStrategist) external virtual {
+        if(msg.sender != strategist){revert NotStrategist();}
         strategist = _newStrategist;
         emit SetStrategist(msg.sender, _newStrategist);
     }

@@ -1,13 +1,14 @@
 //SPDX-License-Identifier: MIT
 
-//Testing TODO on this contract.
-
 /** 
 
 @title  - XpandrUnityVault2
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
           Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers.
+
+@notice - This version sends all fees to a feeRecipient contract instead of multiple txs to each address.
+         - Less global variables/bytecode, cheaper harvest tx
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 
@@ -38,6 +39,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
     /*//////////////////////////////////////////////////////////////
                           VARIABLES & EVENTS
     //////////////////////////////////////////////////////////////*/
+
     event Harvest(address indexed harvester);
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
     event SetFeeToken(address indexed newFeeToken);

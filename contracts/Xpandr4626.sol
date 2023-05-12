@@ -97,7 +97,7 @@ contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
         if(strategy.harvestOnDeposit() == 1) {strategy.afterDeposit();}
     }
 
-    //Function to send funds into the strategy and put them to work.
+    //Function to send funds into the strategy then deposits in the farm.
     //It's primarily called by the vault's deposit() function.
     function _earn() internal {
         uint _bal = idleFunds();

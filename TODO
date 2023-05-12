@@ -4,7 +4,19 @@ Removed reentrancy guard to instead use correct checks/balances.
 Consider changing charge fees from sending to treasury/strat/recipient
 To sending to a protocol owned contract that splits receives funds accordingly & distros.
 
-Pros: Easier control over receiving addresses & split changes without cluttering main contract. Cuts 2 transfers, making overall harvest cost cheaper.
+Pros:
+- Easier control over receiving addresses & split changes without cluttering main contract. 
+- Cuts 2 transfers and contextual code, making overall harvest cost cheaper.
+- Removes some global variables from contract for the future
+- Can set up buyback/distro/bribe infra for the 
 
-Cons: Protocol operational cost in 
+
+
+Cons: A lil operational cost in calling distro in fee contract. Not bad on ftm, can suck on other chains, at starter TVL.
+- If immutable and needs changing, must update all feeRecipient addresses in all vauls. Proxy fixes this.
+
+
+Probably a good idea tho. Will Make second UnityVault version with those changes
+
+
 

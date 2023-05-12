@@ -63,7 +63,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     address public constant treasury = address(0xE37058057B0751bD2653fdeB27e8218439e0f726);
     address public feeRecipient;
 
-    // Routes
+    // Paths
     IEqualizerRouter.Routes[] public equalToWftmPath;
     IEqualizerRouter.Routes[] public equalToMpxPath;
     IEqualizerRouter.Routes[] public customPath;

@@ -3,14 +3,14 @@ pragma solidity 0.8.17;
 
 contract XpandrErrors {
     error ZeroAmount();
+    error ZeroAddress();
     error NotVault();
     error NotEOA();
-    error InvalidDelay();
     error NotAccountOwner();
-    error InvalidProposal();
     error OverCap();
-    error ZeroAddress();
     error UnderTimeLock();
+    error InvalidDelay();
+    error InvalidProposal();
     error InvalidTokenOrPath();
     error UnusedFunction();
 }

@@ -80,7 +80,7 @@ contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
     //Entrypoint of funds into the system. The vault then deposits funds into the strategy.  
     function deposit(uint assets, address receiver) public override nonReentrant returns (uint shares) {
         if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp) + delay) {revert XpandrErrors.UnderTimeLock();}}
-        if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
+        if(msg.sender != receiver){revert XpandrErrors.NotAccountOwner();}
 
         shares = previewDeposit(assets);
         if(shares == 0 || assets ==0){revert XpandrErrors.ZeroAmount();}

@@ -60,7 +60,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     address public feeRecipient;
     address public vault; 
 
-    //Routes
+    // Paths
     IEqualizerRouter.Routes[] public equalToWftmPath;
     IEqualizerRouter.Routes[] public equalToMpxPath;
     IEqualizerRouter.Routes[] public customPath;
@@ -274,7 +274,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     /*//////////////////////////////////////////////////////////////
                                SETTERS
     //////////////////////////////////////////////////////////////*/
-    
+
     function setFeesAndRecipient(uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyAdmin {
         if(_withdrawFee > 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;

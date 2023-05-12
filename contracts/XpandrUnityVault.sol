@@ -50,7 +50,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     address public constant wftm = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
     address public constant equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
     address public constant mpx = address(0x66eEd5FF1701E6ed8470DC391F05e27B1d0657eb);
-    address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit returns USDC value
+    address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit denominator
     address public feeToken;         //Switch for which token protocol receives fees in. In mind for Native & Stable. Streamlines POL portfolio.
     address[] public rewardTokens;
 
@@ -69,7 +69,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     IEqualizerRouter.Routes[] public customPath;
 
     // Fee Structure
-    uint64 public constant FEE_DIVISOR = 500;               //Halved for cheaper divisions with >> 500 instead of / 1000
+    uint64 public constant FEE_DIVISOR = 500;               // Halved for cheaper divisions with >> 500 instead of / 1000
     uint64 public constant PLATFORM_FEE = 35;               // 3.5% Platform fee 
     uint64 public WITHDRAW_FEE = 0;                         // 0% withdrawal fee. Logic kept in case spam/economic attacks bypass buffers.
     uint64 public TREASURY_FEE = 590;
@@ -78,8 +78,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     uint64 public RECIPIENT_FEE;
 
     // Controllers
-    uint64 internal lastHarvest;                             //Safeguard only allows harvest being called if > delay
-    uint public vaultProfit;
+    uint64 internal lastHarvest;                            // Safeguard only allows harvest being called if > delay
+    uint public vaultProfit;                                // Excludes performance fees
     uint64 public delay;
     bool internal constant stable = false;
     uint8 internal harvestOnDeposit;                                    
@@ -198,7 +198,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         IEqualizerGauge(gauge).deposit(assetBal);
     }
 
-    // Withdraw funds from the farm
+    // Withdraws funds from the farm
     function _collect(uint _amount) internal {
         uint assetBal = asset.balanceOf(address(this));
         if (assetBal < _amount) {
@@ -210,9 +210,9 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
         IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, stable, address(this), uint64(block.timestamp));
 
-        uint newProfit = ERC20(equal).balanceOf(address(this));
-        (uint profitBal,) = IEqualizerRouter(router).getAmountOut(newProfit, equal, usdc);
-        vaultProfit = vaultProfit + profitBal;
+        uint bal = ERC20(equal).balanceOf(address(this));
+        (uint newProfit,) = IEqualizerRouter(router).getAmountOut(bal, equal, usdc);
+        vaultProfit = vaultProfit + newProfit;
     
         uint feeBal = ERC20(feeToken).balanceOf(address(this));
 

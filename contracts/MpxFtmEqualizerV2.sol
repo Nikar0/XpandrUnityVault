@@ -157,7 +157,9 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
 
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
         uint outputBal = ERC20(equal).balanceOf(address(this));
-        (uint profitBal,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
+
+        uint toProfit = outputBal - (outputBal  * PLATFORM_FEE >> FEE_DIVISOR);
+        (uint profitBal,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, wftm);
         harvestProfit = harvestProfit + profitBal;
 
         if (outputBal > 0 ) {

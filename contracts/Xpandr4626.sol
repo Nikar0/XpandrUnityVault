@@ -3,7 +3,7 @@
 /** 
 @title  - Xpandr4626
 @author - Nikar0 
-@notice - Mininal, security & gas considerate Vault contract. Used as a 2 piece alongside an external Strategy contract.
+@notice - Mininal, security & gas considerate Vault contract. Used as a 2 piece alongside a Strategy contract.
         Includes: 0% withdraw fee default / Total Vault profit in USD / Deposit buffer.
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
@@ -85,8 +85,8 @@ contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
         shares = previewDeposit(assets);
         if(shares == 0 || assets ==0){revert XpandrErrors.ZeroAmount();}
 
-        vaultProfit = vaultProfit + strategy.harvestProfit();
         lastUserDeposit[msg.sender] = uint64(block.timestamp);
+        vaultProfit = vaultProfit + strategy.harvestProfit();
 
         asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
         

@@ -46,6 +46,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     address public constant wftm = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
     address public constant equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
     address public constant mpx = address(0x66eEd5FF1701E6ed8470DC391F05e27B1d0657eb);
+    address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit denominator
     address public asset;
     address public feeToken;
     address[] public rewardTokens;
@@ -156,13 +157,13 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         }
 
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
-        uint outputBal = ERC20(equal).balanceOf(address(this));
+        uint rewardBal = ERC20(equal).balanceOf(address(this));
 
-        uint bal = outputBal - (outputBal * PLATFORM_FEE >> FEE_DIVISOR);
-        (uint profitBal,) = IEqualizerRouter(router).getAmountOut(bal, equal, wftm);
+        uint toProfit = rewardBal - (rewardBal * PLATFORM_FEE >> FEE_DIVISOR);
+        (uint profitBal,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
         harvestProfit = harvestProfit + profitBal;
 
-        if (outputBal > 0 ) {
+        if (rewardBal > 0 ) {
             _chargeFees(caller);
             _addLiquidity();
         }
@@ -323,7 +324,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
 
 
    function setFeeToken(address _feeToken) external onlyAdmin {
-       if(_feeToken == address(0) && _feeToken == feeToken){revert XpandrErrors.InvalidTokenOrPath();}
+       if(_feeToken == address(0) || _feeToken == feeToken){revert XpandrErrors.InvalidTokenOrPath();}
        feeToken = _feeToken;
    
        ERC20(_feeToken).safeApprove(router, 0);
@@ -333,7 +334,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
 
     
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
-        require(_harvestOnDeposit == 0 || _harvestOnDeposit == 1);
+        if(_harvestOnDeposit != 0 || _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
     } 
 

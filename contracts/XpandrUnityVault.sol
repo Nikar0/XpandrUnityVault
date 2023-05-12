@@ -210,9 +210,9 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
         IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, stable, address(this), uint64(block.timestamp));
 
-        uint bal = ERC20(equal).balanceOf(address(this));
-        (uint newProfit,) = IEqualizerRouter(router).getAmountOut(bal, equal, usdc);
-        vaultProfit = vaultProfit + newProfit;
+        uint toProfit = ERC20(equal).balanceOf(address(this));
+        (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
+        vaultProfit = vaultProfit + usdProfit;
     
         uint feeBal = ERC20(feeToken).balanceOf(address(this));
 
@@ -308,8 +308,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     function setFeesAndRecipient(uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyOwner {
         if(_withdrawFee > 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
-        //FeeDivisor is halved for cheaper divisions with >> 500 instead of / 1000. As such, must * 2 for correct condition check here.
-        if(sum > FEE_DIVISOR * 2){revert XpandrErrors.OverCap();}
+        //FeeDivisor is halved for cheaper divisions with >> 500 instead of  1000. As such, using the correct condition check here.
+        if(sum > uint16(1000)){revert XpandrErrors.OverCap();}
         if(feeRecipient != _recipient){feeRecipient = _recipient;}
 
         CALL_FEE = _callFee;
@@ -354,8 +354,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
 
     // Sets harvestOnDeposit
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
-        if(harvestOnDeposit != 0 || harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
-        require(_harvestOnDeposit == 0 || _harvestOnDeposit == 1);
+        if(_harvestOnDeposit != 0 || _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
     } 
 

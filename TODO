@@ -12,7 +12,7 @@ UnityVaults: second check for caller = tx.origin on internal harvest redudant si
 Done in UnityVault2:
 
 Consider changing charge fees from sending to treasury/strat/recipient
-To sending to a protocol owned contract that splits receives funds accordingly & distros.
+To sending to a protocol owned contract that splits received funds accordingly & distros.
 
 Pros:
 - Easier control over receiving addresses & split changes without cluttering main contract. 

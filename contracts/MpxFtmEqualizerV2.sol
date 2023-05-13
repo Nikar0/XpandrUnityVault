@@ -15,7 +15,7 @@ https://github.com/transmissions11/solmate
 
 */
 
-pragma solidity 0.8.17;
+pragma solidity 0.8.19;
 
 import {Pauser} from "./interfaces/Pauser.sol";
 import {ERC20} from "./interfaces/solmate/ERC20.sol";

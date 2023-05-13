@@ -20,7 +20,7 @@ https://github.com/transmissions11/solmate
         - Pauser = modified OZ Pausable.sol using uint8 instead of bool + error codes.
 **/
 
-pragma solidity 0.8.17;
+pragma solidity 0.8.19;
 
 import {ERC20, ERC4626} from "./interfaces/solmate/ERC4626.sol";
 import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";

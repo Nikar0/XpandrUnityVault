@@ -1,5 +1,17 @@
-Removed reentrancy guard to instead use correct checks/balances.
-100X check if it's done correctly. Fight ptsd.
+Removed reentrancy guard to instead use correct checks/effects.
+100X check if it's done correctly. Fight ptsd
+
+UnityVault: second check for caller = tx.origin on internal harvest redudant since public harvest has it?
+
+
+
+
+
+
+
+
+
+Done in UnityVaul2:
 
 Consider changing charge fees from sending to treasury/strat/recipient
 To sending to a protocol owned contract that splits receives funds accordingly & distros.

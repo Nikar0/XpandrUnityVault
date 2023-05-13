@@ -206,12 +206,13 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
 
     function _chargeFees(address caller) internal {                   
         uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
-        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, stable, address(this), uint64(block.timestamp));
-
-        uint toProfit = ERC20(equal).balanceOf(address(this));
+        uint toProfit = ERC20(equal).balanceOf(address(this)) - toFee;
+        
         (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
         vaultProfit = vaultProfit + usdProfit;
-    
+
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, stable, address(this), uint64(block.timestamp));
+
         uint feeBal = ERC20(feeToken).balanceOf(address(this));
 
         uint callFee = feeBal * CALL_FEE >> FEE_DIVISOR;

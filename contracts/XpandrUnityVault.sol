@@ -20,7 +20,7 @@ https://github.com/transmissions11/solmate
         - Pauser = modified OZ Pausable.sol using uint8 instead of bool + error codes.
 **/
 
-pragma solidity 0.8.20;
+pragma solidity 0.8.19;
 
 import {ERC20, ERC4626} from "./interfaces/solmate/ERC4626.sol";
 import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
@@ -159,7 +159,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         uint assetBal = asset.balanceOf(address(this));
         if (assetBal > assets) {assetBal = assets;}
 
-        if(WITHDRAW_FEE > 0){
+        if(WITHDRAW_FEE != 0){
             uint withdrawFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR; 
             asset.safeTransfer(receiver, assetBal - withdrawFeeAmount);
         } else {asset.safeTransfer(receiver, assetBal);}
@@ -179,7 +179,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
         uint outputBal = ERC20(equal).balanceOf(address(this));
 
-        if (outputBal > 0 ) {
+        if (outputBal != 0 ) {
             _chargeFees(caller);
             _addLiquidity();
         }
@@ -218,7 +218,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         uint callFee = feeBal * CALL_FEE >> FEE_DIVISOR;
         ERC20(feeToken).transfer(caller, callFee);
 
-        if(RECIPIENT_FEE > 0){
+        if(RECIPIENT_FEE != 0){
         uint recipientFee = feeBal * RECIPIENT_FEE >> FEE_DIVISOR;
         ERC20(feeToken).safeTransfer(feeRecipient, recipientFee);
         }
@@ -248,7 +248,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     function callReward() public view returns (uint) {
         uint outputBal = rewardBalance();
         uint wrappedOut;
-        if (outputBal > 0) {
+        if (outputBal != 0) {
             (wrappedOut,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
         } 
         return wrappedOut * PLATFORM_FEE >> FEE_DIVISOR * CALL_FEE >> FEE_DIVISOR;
@@ -367,7 +367,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     tokens sent to this address in the form of an airdrop of a different token type. This will allow conversion
     said token to the {output} token of the strategy, allowing the amount to be paid out to stakers in the next harvest. */ 
     function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
-        if(_token == asset || _token == equal){revert InvalidTokenOrPath();}
+        if(_token == equal || _token == wftm || _token == mpx){revert XpandrErrors.InvalidTokenOrPath();}
         uint bal;
         if(_amount == 0) {bal = ERC20(_token).balanceOf(address(this));}
         else {bal = _amount;}

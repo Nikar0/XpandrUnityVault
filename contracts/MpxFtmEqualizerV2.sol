@@ -308,13 +308,11 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
 
     function setPaths(IEqualizerRouter.Routes[] memory _equalToMpx, IEqualizerRouter.Routes[] memory _equalToWftm) external onlyAdmin{
         if(_equalToMpx.length != 0){
-            delete equalToMpxPath;
             for (uint i; i < _equalToMpx.length; ++i) {
             equalToMpxPath.push(_equalToMpx[i]);
             }
         }
         if(_equalToWftm.length != 0){
-            delete equalToWftmPath;
             for (uint i; i < _equalToWftm.length; ++i) {
             equalToWftmPath.push(_equalToWftm[i]);
             }

@@ -78,7 +78,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
 
     // Controllers
     uint64 public delay;
-    uint64 internal lastHarvest;                            // Safeguard only allows harvest being called if > delay
+    uint128 internal lastHarvest;                            // Safeguard only allows harvest being called if > delay
     bool internal constant stable = false;
     uint8 internal harvestOnDeposit;   
     uint public vaultProfit;                                // Excludes performance fees                             
@@ -130,7 +130,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
 
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
     function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
-        if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp) + delay) {revert XpandrErrors.UnderTimeLock();}}
+        if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp) + delay){revert XpandrErrors.UnderTimeLock();}}
         if(msg.sender != receiver){revert XpandrErrors.NotAccountOwner();}
 
         shares = previewDeposit(assets);
@@ -172,7 +172,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
-        if(lastHarvest < uint64(block.timestamp) + delay){revert XpandrErrors.UnderTimeLock();}
+        if(lastHarvest < uint128(block.timestamp + delay)){revert XpandrErrors.UnderTimeLock();}
         _harvest(msg.sender);
     }
 
@@ -211,9 +211,8 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
     function _chargeFees(address caller) internal {                   
         uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
         uint toProfit = ERC20(equal).balanceOf(address(this)) - toFee;
-        
         (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
-        vaultProfit = vaultProfit + usdProfit;
+        vaultProfit = vaultProfit + uint128(usdProfit * 1e18);
 
         IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, stable, address(this), uint64(block.timestamp));
     

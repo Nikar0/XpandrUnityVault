@@ -77,7 +77,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
 
     // Controllers
     uint64 internal lastHarvest;
-    uint public harvestProfit;
+    uint128 public harvestProfit;
     uint128 internal delay;
     bool public constant stable = false;
     uint8 public harvestOnDeposit;
@@ -147,7 +147,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
-        if(lastHarvest < uint64(block.timestamp) + delay ){revert XpandrErrors.UnderTimeLock();}
+        if(lastHarvest < uint64(block.timestamp + delay)){revert XpandrErrors.UnderTimeLock();}
         _harvest(msg.sender);
     }
 
@@ -161,7 +161,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
 
         uint toProfit = rewardBal - (rewardBal * PLATFORM_FEE >> FEE_DIVISOR);
         (uint profitBal,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
-        harvestProfit = harvestProfit + profitBal;
+        harvestProfit = harvestProfit + uint128(profitBal * 1e18);
 
         if (rewardBal > 0 ) {
             _chargeFees(caller);

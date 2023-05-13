@@ -361,14 +361,15 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
     tokens sent to this address in the form of an airdrop of a different token type. This will allow conversion
     said token to the {output} token of the strategy, allowing the amount to be paid out to stakers in the next harvest. */ 
     function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
+        if(_token == asset || _token == equal){revert InvalidTokenOrPath();}
         uint bal;
         if(_amount == 0) {bal = ERC20(_token).balanceOf(address(this));}
         else {bal = _amount;}
-        delete customPath;
+
         for (uint i; i < _path.length; ++i) {
             customPath.push(_path[i]);
         }
-
+        
         ERC20(_token).safeApprove(router, 0);
         ERC20(_token).safeApprove(router, type(uint).max);
         IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 0, customPath, address(this), uint64(block.timestamp));

@@ -147,13 +147,13 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     }
 
     // Withdraw 'asset' from farm into vault & sends to receiver.
-    function withdraw(uint assets, address receiver, address owner) public override returns (uint shares) {
-        if(msg.sender != receiver && msg.sender != owner){revert XpandrErrors.NotAccountOwner();}
+    function withdraw(uint assets, address receiver, address _owner) public override returns (uint shares) {
+        if(msg.sender != receiver && msg.sender != _owner){revert XpandrErrors.NotAccountOwner();}
         shares = previewWithdraw(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
         if(shares > ERC20(address(this)).balanceOf(msg.sender)){revert XpandrErrors.OverCap();}
        
-        _burn(owner, shares);
+        _burn(_owner, shares);
         _collect(assets);
 
         uint assetBal = asset.balanceOf(address(this));
@@ -164,7 +164,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
             asset.safeTransfer(receiver, assetBal - withdrawFeeAmount);
         } else {asset.safeTransfer(receiver, assetBal);}
 
-        emit Withdraw(msg.sender, receiver, owner, assets, shares);
+        emit Withdraw(msg.sender, receiver, _owner, assets, shares);
     }
 
     function harvest() external {

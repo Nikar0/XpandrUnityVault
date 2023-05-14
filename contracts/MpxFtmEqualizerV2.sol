@@ -56,7 +56,6 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     address public router;
 
     // Xpandr addresses
-    address public constant harvester = address(0xDFAA88D5d068370689b082D34d7B546CbF393bA9);
     address public constant treasury = address(0xE37058057B0751bD2653fdeB27e8218439e0f726);
     address public feeRecipient;
     address public vault; 
@@ -108,7 +107,6 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         harvestOnDeposit = 0;
         lastHarvest = uint64(block.timestamp);
         _addAllowance();
-        
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -184,7 +182,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         uint callFee = feeBal * CALL_FEE >> FEE_DIVISOR;
         ERC20(feeToken).transfer(caller, callFee);
 
-        if(RECIPIENT_FEE >0){
+        if(RECIPIENT_FEE != 0){
         uint recipientFee = feeBal * RECIPIENT_FEE >> FEE_DIVISOR;
         ERC20(feeToken).safeTransfer(feeRecipient, recipientFee);
         }
@@ -279,7 +277,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
 
     function setFeesAndRecipient(uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyAdmin {
-        if(_withdrawFee > 1){revert XpandrErrors.OverCap();}
+        if(_withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         //FeeDivisor is halved for divisions with >> 500 instead of /1000. As such, must * 2 for correct condition check here.
         if(sum > uint16(1000)){revert XpandrErrors.OverCap();}
@@ -291,10 +289,11 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         TREASURY_FEE = _treasuryFee;
         RECIPIENT_FEE = _recipientFee;
 
-        emit SetFeesAndRecipient(WITHDRAW_FEE, sum, feeRecipient);
+        emit SetFeesAndRecipient(_withdrawFee, sum, feeRecipient);
     }
 
     function setVault(address _vault) external onlyOwner {
+        if(_vault == address(0)){revert XpandrErrors.ZeroAddress();}
         vault = _vault;
         emit SetVault(_vault);
     }

@@ -38,6 +38,7 @@ contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                            VARIABLES & EVENTS
     //////////////////////////////////////////////////////////////*/
+    
     struct StratCandidate {
         address implementation;
         uint proposedTime;
@@ -73,6 +74,7 @@ contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                           DEPOSIT/WITHDRAW
     //////////////////////////////////////////////////////////////*/
+
     function depositAll() external {
         deposit(asset.balanceOf(msg.sender), msg.sender);
     }

@@ -58,7 +58,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     address public router;
 
     // Xpandr addresses
-    address public constant harvester = address(0xDFAA88D5d068370689b082D34d7B546CbF393bA9);
     address public constant treasury = address(0xE37058057B0751bD2653fdeB27e8218439e0f726);
     address public feeRecipient;
 
@@ -284,12 +283,12 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
 
     // Pauses the vault & executes emergency withdraw
     function panic() external onlyAdmin {
-        pause();
+        this.pause();
         IEqualizerGauge(gauge).withdraw(balanceOfPool());
         emit Panic(msg.sender);
     }
 
-    function pause() public onlyAdmin {
+    function pause() external onlyAdmin {
         _pause();
         _subAllowance();
     }
@@ -305,7 +304,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     //////////////////////////////////////////////////////////////*/
 
     function setFeesAndRecipient(uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyOwner {
-        if(_withdrawFee > 1){revert XpandrErrors.OverCap();}
+        if(_withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         //FeeDivisor is halved for cheaper divisions with >> 500 instead of 1000. As such, using the correct condition check here.
         if(sum > uint64(1000)){revert XpandrErrors.OverCap();}
@@ -316,7 +315,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         WITHDRAW_FEE = _withdrawFee;
         TREASURY_FEE = _treasuryFee;
         RECIPIENT_FEE = _recipientFee;
-        emit SetFeesAndRecipient(WITHDRAW_FEE, sum, feeRecipient);
+        emit SetFeesAndRecipient(_withdrawFee, sum, feeRecipient);
     }
 
     function setRouterOrGauge(address _router, address _gauge) external onlyOwner {

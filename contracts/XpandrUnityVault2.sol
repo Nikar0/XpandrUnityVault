@@ -279,12 +279,12 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
 
     // Pauses the vault & executes emergency withdraw
     function panic() external onlyAdmin {
-        pause();
+        this.pause();
         IEqualizerGauge(gauge).withdraw(balanceOfPool());
         emit Panic(msg.sender);
     }
 
-    function pause() public onlyAdmin {
+    function pause() external onlyAdmin {
         _pause();
         _subAllowance();
     }
@@ -300,7 +300,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
     //////////////////////////////////////////////////////////////*/
 
     function setFeesAndRecipient(uint64 _callFee, uint64 _withdrawFee, uint64 _recipientFee, address _recipient) external onlyOwner {
-        if(_withdrawFee > 1){revert XpandrErrors.OverCap();}
+        if(_withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _recipientFee;
         //FeeDivisor is halved for cheaper divisions with >> 500 instead of  1000. As such, using the correct condition check here.
         if(sum > uint16(1000)){revert XpandrErrors.OverCap();}
@@ -309,7 +309,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
         CALL_FEE = _callFee;
         WITHDRAW_FEE = _withdrawFee;
         XPANDR_FEE = _recipientFee;
-        emit SetFeesAndRecipient(WITHDRAW_FEE, sum, xpandrRecipient);
+        emit SetFeesAndRecipient(_withdrawFee, sum, xpandrRecipient);
     }
 
     function setRouterOrGauge(address _router, address _gauge) external onlyOwner {
@@ -391,7 +391,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
         ERC20(mpx).safeApprove(router, type(uint).max);
     }
 
-    //ERC4626 hook. Called by deposit if harvestOnDeposit = 1. Args unused but part of spec
+    //ERC4626 hook. Called by deposit if harvestOnDeposit = 1. Args unused but part of 4626 spec
     function afterDeposit(uint assets, uint shares) internal override {
         _harvest(tx.origin);
     }

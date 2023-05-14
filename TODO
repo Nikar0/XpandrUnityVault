@@ -3,6 +3,7 @@ Removed reentrancy guard to instead use correct checks/effects.
 
 UnityVaults: second check for caller = tx.origin on internal harvest redudant since public harvest has it?
 
+Add ERC4626 take profit vaults. Using Jae's take profit contracts w/ permission.
 
 
 

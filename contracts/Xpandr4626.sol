@@ -102,7 +102,7 @@ contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
     //Function to send funds into the strategy then deposits in the farm.
     //It's primarily called by the vault's deposit() function.
     function _earn() internal {
-        uint _bal = idleFunds();
+        uint _bal = asset.balanceOf(address(this));
         asset.safeTransfer(address(strategy), _bal);
         strategy.deposit();
     }

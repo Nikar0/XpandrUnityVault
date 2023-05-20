@@ -5,7 +5,7 @@
 @title  - XpandrUnityVault2
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
-          Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers / Adjustable fee for promotional events w/ max cap.
+          Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers / Adjustable platform fee for promotional events w/ max cap.
 
 @notice - This version sends all fees to a feeRecipient contract instead of multiple txs to each receiving protocol address.
         - Less global variables/bytecode, cheaper harvest tx
@@ -72,7 +72,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
     // Fee Structure
     uint64 public constant FEE_DIVISOR = 500;               // Halved for cheaper divisions with >> 500 instead of / 1000
     uint64 public PLATFORM_FEE = 35;                        // 3.5% Platform fee cap
-    uint64 public WITHDRAW_FEE = 0;                         // 0% withdrawal fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0.1%
+    uint64 public WITHDRAW_FEE = 0;                         // 0% withdrawal fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0 or 0.1%
     uint64 public CALL_FEE = 120;
     uint64 public XPANDR_FEE = 880;
 
@@ -177,8 +177,6 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
     }
 
     function _harvest(address caller) internal whenNotPaused {
-        if(caller != tx.origin){revert XpandrErrors.NotEOA();}
-
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
         uint outputBal = ERC20(equal).balanceOf(address(this));
 
@@ -301,7 +299,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
 
     function setFeesAndRecipient(uint64 _platformFee, uint64 _callFee, uint64 _withdrawFee, uint64 _recipientFee, address _recipient) external onlyOwner {
         if(_platformFee > 35){revert XpandrErrors.OverCap();}
-        if(_withdrawFee != 1){revert XpandrErrors.OverCap();}
+        if(_withdrawFee != 0 || _withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _recipientFee;
         //FeeDivisor is halved for cheaper divisions with >> 500 instead of  1000. As such, using correct value for condition check here.
         if(sum > uint16(1000)){revert XpandrErrors.OverCap();}
@@ -359,7 +357,8 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
                                UTILS
     //////////////////////////////////////////////////////////////
 
-    This function  */ 
+    This function exists for cases where a vault may receive sporadic 3rd party rewards such as airdrop from it's deposit in a farm.
+    Enables convert that token into more of this vault's reward. */ 
     function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
         if(_token == equal || _token == wftm || _token == mpx){revert XpandrErrors.InvalidTokenOrPath();}
         uint bal;

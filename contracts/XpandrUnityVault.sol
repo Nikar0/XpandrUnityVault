@@ -5,7 +5,7 @@
 @title  - XpandrUnityVault
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
-          Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers / Adjustable fee for promotional events w/ max cap.
+          Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers / Adjustable platform fee for promotional events w/ max cap.
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 
@@ -69,7 +69,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     // Fee Structure
     uint64 public constant FEE_DIVISOR = 500;               // Halved for cheaper divisions with >> 500 instead of / 1000
     uint64 public PLATFORM_FEE = 35;                        // 3.5% Platform fee cap
-    uint64 public WITHDRAW_FEE = 0;                         // 0% withdrawal fee. Logic kept in case spam/economic attacks bypass buffers.
+    uint64 public WITHDRAW_FEE = 0;                         // 0% withdraw fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0 or 0.1%
     uint64 public TREASURY_FEE = 590;
     uint64 public CALL_FEE = 120;
     uint64 public STRAT_FEE = 290;  
@@ -173,8 +173,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     }
 
     function _harvest(address caller) internal whenNotPaused {
-        if(caller != tx.origin){revert XpandrErrors.NotEOA();}
-
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
         uint outputBal = ERC20(equal).balanceOf(address(this));
 
@@ -305,7 +303,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
 
     function setFeesAndRecipient(uint64 _platformFee, uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyOwner {
         if(_platformFee > 35){revert XpandrErrors.OverCap();}
-        if(_withdrawFee != 1){revert XpandrErrors.OverCap();}
+        if(_withdrawFee != 0 || _withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         //FeeDivisor is halved for cheaper divisions with >> 500 instead of 1000. As such, using correct value for condition check here.
         if(sum > uint64(1000)){revert XpandrErrors.OverCap();}
@@ -362,11 +360,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
 
     /*//////////////////////////////////////////////////////////////
                                UTILS
-    //////////////////////////////////////////////////////////////*/
+    //////////////////////////////////////////////////////////////
 
-    /** This function exists incase tokens that do not match the {asset} of this strategy accrue.  For example: an amount of
-    tokens sent to this address in the form of an airdrop of a different token type. This will allow conversion
-    said token to the {output} token of the strategy, allowing the amount to be paid out to stakers in the next harvest. */ 
+    This function exists for cases where a vault may receive sporadic 3rd party rewards such as airdrop from it's deposit in a farm.
+    Enables convert that token into more of this vault's reward. */ 
     function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
         if(_token == equal || _token == wftm || _token == mpx){revert XpandrErrors.InvalidTokenOrPath();}
         uint bal;
@@ -404,11 +401,11 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
 
     /*//////////////////////////////////////////////////////////////
                                UNUSED
-    //////////////////////////////////////////////////////////////*/
-    /**Following functions are included as per EIP-4626 standard but are not meant
+    //////////////////////////////////////////////////////////////
+
+    Following functions are included as per EIP-4626 standard but are not meant
     To be used in the context of this vault. As such, they were made void by design.
-    This vault does not allow 3rd parties to deposit or withdraw for another Owner.
-    */
+    This vault does not allow 3rd parties to deposit or withdraw for another Owner.*/
     function redeem(uint shares, address receiver, address _owner) public pure override returns (uint) {if(!false){revert XpandrErrors.UnusedFunction();}}
     function mint(uint shares, address receiver) public pure override returns (uint) {if(!false){revert XpandrErrors.UnusedFunction();}}
     function previewMint(uint shares) public pure override returns (uint){if(!false){revert XpandrErrors.UnusedFunction();}}

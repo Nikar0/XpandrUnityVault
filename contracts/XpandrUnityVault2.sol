@@ -5,10 +5,10 @@
 @title  - XpandrUnityVault2
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
-          Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers.
+          Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers / Adjustable fee for promotional events w/ max cap.
 
-@notice - This version sends all fees to a feeRecipient contract instead of multiple txs to each address.
-         - Less global variables/bytecode, cheaper harvest tx
+@notice - This version sends all fees to a feeRecipient contract instead of multiple txs to each receiving protocol address.
+        - Less global variables/bytecode, cheaper harvest tx
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 
@@ -71,14 +71,14 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
 
     // Fee Structure
     uint64 public constant FEE_DIVISOR = 500;               // Halved for cheaper divisions with >> 500 instead of / 1000
-    uint64 public constant PLATFORM_FEE = 35;               // 3.5% Platform fee 
-    uint64 public WITHDRAW_FEE = 0;                         // 0% withdrawal fee. Logic kept in case spam/economic attacks bypass buffers.
+    uint64 public PLATFORM_FEE = 35;                        // 3.5% Platform fee cap
+    uint64 public WITHDRAW_FEE = 0;                         // 0% withdrawal fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0.1%
     uint64 public CALL_FEE = 120;
     uint64 public XPANDR_FEE = 880;
 
     // Controllers
     uint64 public delay;
-    uint128 internal lastHarvest;                            // Safeguard only allows harvest being called if > delay
+    uint128 internal lastHarvest;                           // Safeguard only allows harvest being called if > delay
     bool internal constant stable = false;
     uint8 internal harvestOnDeposit;   
     uint public vaultProfit;                                // Excludes performance fees                             
@@ -95,7 +95,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
         )
        ERC4626(
             _asset,
-            string(abi.encodePacked("Tester")),
+            string(abi.encodePacked("Tester Vault")),
             string(abi.encodePacked("LP"))
         )
         {
@@ -299,13 +299,15 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
                                SETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function setFeesAndRecipient(uint64 _callFee, uint64 _withdrawFee, uint64 _recipientFee, address _recipient) external onlyOwner {
+    function setFeesAndRecipient(uint64 _platformFee, uint64 _callFee, uint64 _withdrawFee, uint64 _recipientFee, address _recipient) external onlyOwner {
+        if(_platformFee > 35){revert XpandrErrors.OverCap();}
         if(_withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _recipientFee;
-        //FeeDivisor is halved for cheaper divisions with >> 500 instead of  1000. As such, using the correct condition check here.
+        //FeeDivisor is halved for cheaper divisions with >> 500 instead of  1000. As such, using correct value for condition check here.
         if(sum > uint16(1000)){revert XpandrErrors.OverCap();}
-        if(xpandrRecipient != _recipient){xpandrRecipient = _recipient;}
+        if(_recipient != address(0) && _recipient != xpandrRecipient){xpandrRecipient = _recipient;}
 
+        PLATFORM_FEE = _platformFee;
         CALL_FEE = _callFee;
         WITHDRAW_FEE = _withdrawFee;
         XPANDR_FEE = _recipientFee;
@@ -357,14 +359,11 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
                                UTILS
     //////////////////////////////////////////////////////////////
 
-    This function exists incase tokens that do not match the {asset} of this strategy accrue.  For example: an amount of
-    tokens sent to this address in the form of an airdrop of a different token type. This will allow conversion
-    said token to the {output} token of the strategy, allowing the amount to be paid out to stakers in the next harvest. */ 
+    This function  */ 
     function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
         if(_token == equal || _token == wftm || _token == mpx){revert XpandrErrors.InvalidTokenOrPath();}
         uint bal;
-        if(_amount == 0) {bal = ERC20(_token).balanceOf(address(this));}
-        else {bal = _amount;}
+        if(_amount == 0) {bal = ERC20(_token).balanceOf(address(this));} else {bal = _amount;}
 
         for (uint i; i < _path.length; ++i) {
             customPath.push(_path[i]);
@@ -372,7 +371,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
         
         ERC20(_token).safeApprove(router, 0);
         ERC20(_token).safeApprove(router, type(uint).max);
-        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 0, customPath, address(this), uint64(block.timestamp));
+        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, customPath, address(this), uint64(block.timestamp));
    
         emit CustomTx(_token, bal);
     }

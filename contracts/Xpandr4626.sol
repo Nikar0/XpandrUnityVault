@@ -3,8 +3,8 @@
 /** 
 @title  - Xpandr4626
 @author - Nikar0 
-@notice - Mininal, security & gas considerate Vault contract. Used as a 2 piece alongside a Strategy contract.
-        Includes: 0% withdraw fee default / Total Vault profit in USD / Deposit buffer.
+@notice - Mininal, security & gas considerate Vault contract. Used as 2 piece alongside a Strategy contract.
+        - Includes: 0% withdraw fee default / Total Vault profit in USD / Deposit buffer.
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 
@@ -63,7 +63,7 @@ contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
     constructor (ERC20 _asset, IStrategy _strategy)
        ERC4626(
             _asset,
-            string(abi.encodePacked("Tester")),
+            string(abi.encodePacked("Tester Vault")),
             string(abi.encodePacked("LP"))
         )
     {

@@ -5,7 +5,7 @@
 @title  - XpandrUnityVault
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
-          Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers.
+          Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers / Adjustable fee for promotional events w/ max cap.
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 
@@ -50,7 +50,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     address public constant equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
     address public constant mpx = address(0x66eEd5FF1701E6ed8470DC391F05e27B1d0657eb);
     address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit denominator
-    address public feeToken;         //Switch for which token protocol receives fees in. In mind for Native & Stable. Streamlines POL portfolio.
+    address public feeToken;      // Switch for which token protocol receives fees in. In mind for Native & Stable but fits any Equal - X token swap. Streamlines POL portfolio.
     address[] public rewardTokens;
 
     // 3rd party contracts
@@ -68,7 +68,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
 
     // Fee Structure
     uint64 public constant FEE_DIVISOR = 500;               // Halved for cheaper divisions with >> 500 instead of / 1000
-    uint64 public constant PLATFORM_FEE = 35;               // 3.5% Platform fee 
+    uint64 public PLATFORM_FEE = 35;                        // 3.5% Platform fee cap
     uint64 public WITHDRAW_FEE = 0;                         // 0% withdrawal fee. Logic kept in case spam/economic attacks bypass buffers.
     uint64 public TREASURY_FEE = 590;
     uint64 public CALL_FEE = 120;
@@ -93,7 +93,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         )
        ERC4626(
             _asset,
-            string(abi.encodePacked("Tester")),
+            string(abi.encodePacked("Tester Vault")),
             string(abi.encodePacked("LP"))
         )
         {
@@ -303,13 +303,15 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
                                SETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function setFeesAndRecipient(uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyOwner {
+    function setFeesAndRecipient(uint64 _platformFee, uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyOwner {
+        if(_platformFee > 35){revert XpandrErrors.OverCap();}
         if(_withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
-        //FeeDivisor is halved for cheaper divisions with >> 500 instead of 1000. As such, using the correct condition check here.
+        //FeeDivisor is halved for cheaper divisions with >> 500 instead of 1000. As such, using correct value for condition check here.
         if(sum > uint64(1000)){revert XpandrErrors.OverCap();}
-        if(feeRecipient != _recipient){feeRecipient = _recipient;}
+        if(_recipient != address(0) && _recipient != _recipient){feeRecipient = _recipient;}
 
+        PLATFORM_FEE = _platformFee;
         CALL_FEE = _callFee;
         STRAT_FEE = _stratFee;
         WITHDRAW_FEE = _withdrawFee;

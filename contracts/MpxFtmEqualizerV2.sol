@@ -4,7 +4,7 @@
 @title  - MpxFtmEqualizerV2
 @author - Nikar0 
 @notice - Example Strategy to be used with Xpandr4626 Vault
-Includes: feeToken switch / 0% withdraw fee default / Feeds total profit to vault in USD / Harvest buffer.
+Includes: feeToken switch / 0% withdraw fee default / Feeds total profit to vault in USD / Harvest buffer/ Adjustable fee for promotional events w/ max cap.
 
 https://www.github.com/nikar0/Xpandr4626
 
@@ -67,8 +67,8 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
 
     // Fee Structure
     uint64 public constant FEE_DIVISOR = 500;
-    uint64 public constant PLATFORM_FEE = 35;               // 3.5% Platform fee 
-    uint64 public WITHDRAW_FEE = 0;                         // 0% of withdrawal amount. Kept in case of economic attacks.
+    uint64 public PLATFORM_FEE = 35;                         // 3.5% Platform fee max cap
+    uint64 public WITHDRAW_FEE = 0;                         // 0% withdraw fee. Kept in case of economic attacks, can only be set to 0.1%
     uint64 public TREASURY_FEE = 590;
     uint64 public CALL_FEE = 120;
     uint64 public STRAT_FEE = 290;  
@@ -276,13 +276,15 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
                                SETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function setFeesAndRecipient(uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyAdmin {
+    function setFeesAndRecipient(uint64 _platformFee, uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyAdmin {
+        if(_platformFee > 35){revert XpandrErrors.OverCap();}
         if(_withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
-        //FeeDivisor is halved for divisions with >> 500 instead of /1000. As such, must * 2 for correct condition check here.
+        //FeeDivisor is halved for divisions with >> 500 instead of / 1000. As such, using correct value for condition check here.
         if(sum > uint16(1000)){revert XpandrErrors.OverCap();}
-        if(feeRecipient != _recipient){feeRecipient = _recipient;}
+        if(feeRecipient != address(0) && feeRecipient != _recipient){feeRecipient = _recipient;}
 
+        PLATFORM_FEE = _platformFee;
         CALL_FEE = _callFee;
         STRAT_FEE = _stratFee;
         WITHDRAW_FEE = _withdrawFee;

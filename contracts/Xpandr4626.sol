@@ -1,4 +1,5 @@
-//SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: No License (None)
+// No permissions granted before Sunday, 5th May 2024, then GPL-3.0 after this date.
 
 /** 
 @title  - Xpandr4626
@@ -102,8 +103,8 @@ contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
     //Function to send funds into the strategy then deposits in the farm.
     //It's primarily called by the vault's deposit() function.
     function _earn() internal {
-        uint _bal = asset.balanceOf(address(this));
-        asset.safeTransfer(address(strategy), _bal);
+        uint bal = asset.balanceOf(address(this));
+        asset.safeTransfer(address(strategy), bal);
         strategy.deposit();
     }
 

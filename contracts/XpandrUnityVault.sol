@@ -1,4 +1,5 @@
-//SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: No License (None)
+// No permissions granted before Sunday, 5th May 2024, then GPL-3.0 after this date.
 
 /** 
 
@@ -22,7 +23,7 @@ https://github.com/transmissions11/solmate
 
 pragma solidity 0.8.19;
 
-import {ERC20, ERC4626} from "./interfaces/solmate/ERC4626.sol";
+import {ERC20, ERC4626, FixedPointMathLib} from "./interfaces/solmate/ERC4626mod.sol";
 import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
 import {AccessControl} from "./interfaces/AccessControl.sol";
 import {Pauser} from "./interfaces/Pauser.sol";
@@ -32,10 +33,12 @@ import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 
 contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     using SafeTransferLib for ERC20;
+    using FixedPointMathLib for uint;
 
     /*//////////////////////////////////////////////////////////////
                           VARIABLES & EVENTS
     //////////////////////////////////////////////////////////////*/
+    
     event Harvest(address indexed harvester);
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
     event SetFeeToken(address indexed newFeeToken);
@@ -113,13 +116,13 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         rewardTokens.push(equal);
         harvestOnDeposit = 0;
         lastHarvest = uint64(block.timestamp);
-        totalSupply = type(uint).max;
         _addAllowance();
     }
 
     /*//////////////////////////////////////////////////////////////
                           DEPOSIT/WITHDRAW
     //////////////////////////////////////////////////////////////*/
+
      function depositAll() external {
         deposit(asset.balanceOf(msg.sender), msg.sender);
     }
@@ -127,16 +130,18 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
     function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
         if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp + delay)) {revert XpandrErrors.UnderTimeLock();}}
-        if(msg.sender != receiver){revert XpandrErrors.NotAccountOwner();}
+        if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
+        shares = convertToShares(assets);
+        if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
+        if(assets > asset.balanceOf(owner)){revert XpandrErrors.OverCap();}
 
-        shares = previewDeposit(assets);
-        if(assets ==0 || shares == 0){revert XpandrErrors.ZeroAmount();}
         lastUserDeposit[msg.sender] = uint64(block.timestamp);
 
         asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
+        emit Deposit(msg.sender, receiver, assets, shares);
+
         _mint(msg.sender, shares);
         _earn();
-        emit Deposit(msg.sender, receiver, assets, shares);
 
         if(harvestOnDeposit == 1) {afterDeposit(assets, shares);}
     }
@@ -146,11 +151,11 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     }
 
     // Withdraw 'asset' from farm into vault & sends to receiver.
-    function withdraw(uint assets, address receiver, address _owner) public override returns (uint shares) {
-        if(msg.sender != receiver && msg.sender != _owner){revert XpandrErrors.NotAccountOwner();}
-        shares = previewWithdraw(assets);
+    function withdraw(uint shares, address receiver, address _owner) public override returns (uint assets) {
+        if(tx.origin != receiver && tx.origin != _owner){revert XpandrErrors.NotAccountOwner();}
+        assets = convertToAssets(shares);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
-        if(shares > ERC20(address(this)).balanceOf(msg.sender)){revert XpandrErrors.OverCap();}
+        if(shares > ERC20(address(this)).balanceOf(_owner)){revert XpandrErrors.OverCap();}
        
         _burn(_owner, shares);
         _collect(assets);
@@ -158,12 +163,13 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         uint assetBal = asset.balanceOf(address(this));
         if (assetBal > assets) {assetBal = assets;}
 
+        emit Withdraw(msg.sender, receiver, _owner, assetBal, shares);
+        
         if(WITHDRAW_FEE != 0){
-            uint withdrawFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR; 
+            uint withdrawFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR;
+            
             asset.safeTransfer(receiver, assetBal - withdrawFeeAmount);
         } else {asset.safeTransfer(receiver, assetBal);}
-
-        emit Withdraw(msg.sender, receiver, _owner, assets, shares);
     }
 
     function harvest() external {
@@ -180,13 +186,14 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
             _chargeFees(caller);
             _addLiquidity();
         }
-        _earn();
         emit Harvest(caller);
+        _earn();
     }
 
     /*//////////////////////////////////////////////////////////////
-                          INTERNAL HELPERS
+                             INTERNAL
     //////////////////////////////////////////////////////////////*/
+
     // Deposits funds in the farm
     function _earn() internal {
         uint assetBal = asset.balanceOf(address(this));
@@ -206,7 +213,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         uint toProfit = ERC20(equal).balanceOf(address(this)) - toFee;
 
         (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
-        vaultProfit = vaultProfit + (uint128(usdProfit * 1e18));
+        vaultProfit = vaultProfit + uint128(usdProfit * 1e18);
 
         IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, stable, address(this), uint64(block.timestamp));
 
@@ -251,7 +258,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         return wrappedOut * PLATFORM_FEE >> FEE_DIVISOR * CALL_FEE >> FEE_DIVISOR;
     }
 
-    function idleFunds() public view returns (uint) {
+    function idleFunds() external view returns (uint) {
         return asset.balanceOf(address(this));
     }
     
@@ -271,8 +278,18 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     }
 
     // Function for UIs to display the current value of 1 vault share
-    function getPricePerFullShare() public view returns (uint) {
+    function getPricePerFullShare() external view returns (uint) {
         return totalSupply == 0 ? 1e18 : totalAssets() * 1e18 / totalSupply;
+    }
+
+    function convertToShares(uint256 assets) public view override returns (uint256) {
+        uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
+        return supply == 0 ? assets : assets.mulDivDown(supply, totalAssets());
+    }
+
+    function convertToAssets(uint256 shares) public view override returns (uint256) {
+        uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
+        return supply == 0 ? shares : shares.mulDivDown(totalAssets(), supply);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -281,12 +298,12 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
 
     // Pauses the vault & executes emergency withdraw
     function panic() external onlyAdmin {
-        this.pause();
-        IEqualizerGauge(gauge).withdraw(balanceOfPool());
+        pause();
         emit Panic(msg.sender);
+        IEqualizerGauge(gauge).withdraw(balanceOfPool());
     }
 
-    function pause() external onlyAdmin {
+    function pause() public onlyAdmin {
         _pause();
         _subAllowance();
     }
@@ -309,13 +326,14 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         if(sum > uint64(1000)){revert XpandrErrors.OverCap();}
         if(_recipient != address(0) && _recipient != _recipient){feeRecipient = _recipient;}
 
+        emit SetFeesAndRecipient(_withdrawFee, sum, feeRecipient);
+
         PLATFORM_FEE = _platformFee;
         CALL_FEE = _callFee;
         STRAT_FEE = _stratFee;
         WITHDRAW_FEE = _withdrawFee;
         TREASURY_FEE = _treasuryFee;
         RECIPIENT_FEE = _recipientFee;
-        emit SetFeesAndRecipient(_withdrawFee, sum, feeRecipient);
     }
 
     function setRouterOrGauge(address _router, address _gauge) external onlyOwner {
@@ -342,10 +360,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
    function setFeeToken(address _feeToken) external onlyAdmin {
        if(_feeToken == address(0) || _feeToken == feeToken){revert XpandrErrors.InvalidTokenOrPath();}
        feeToken = _feeToken;
+       emit SetFeeToken(_feeToken);
       
        ERC20(_feeToken).safeApprove(router, 0);
        ERC20(_feeToken).safeApprove(router, type(uint).max);
-       emit SetFeeToken(_feeToken);
     }
 
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
@@ -374,10 +392,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
             customPath.push(_path[i]);
         }
 
+        emit CustomTx(_token, bal);
         ERC20(_token).safeApprove(router, 0);
         ERC20(_token).safeApprove(router, type(uint).max);
         IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 0, customPath, address(this), uint64(block.timestamp));
-        emit CustomTx(_token, bal);
     }
 
     function _subAllowance() internal {
@@ -398,17 +416,4 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     function afterDeposit(uint assets, uint shares) internal override {
         _harvest(tx.origin);
     }
-
-    /*//////////////////////////////////////////////////////////////
-                               UNUSED
-    //////////////////////////////////////////////////////////////
-
-    Following functions are included as per EIP-4626 standard but are not meant
-    To be used in the context of this vault. As such, they were made void by design.
-    This vault does not allow 3rd parties to deposit or withdraw for another Owner.*/
-    function redeem(uint shares, address receiver, address _owner) public pure override returns (uint) {if(!false){revert XpandrErrors.UnusedFunction();}}
-    function mint(uint shares, address receiver) public pure override returns (uint) {if(!false){revert XpandrErrors.UnusedFunction();}}
-    function previewMint(uint shares) public pure override returns (uint){if(!false){revert XpandrErrors.UnusedFunction();}}
-    function maxRedeem(address _owner) public pure override returns (uint) {if(!false){revert XpandrErrors.UnusedFunction();}}
-
 }

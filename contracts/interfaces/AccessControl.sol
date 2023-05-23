@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-pragma solidity >=0.8.0 <=0.9.0;
+pragma solidity ^0.8.19;
 
 /**
 @notice Based on solmate's Owned.sol with added access control for an operator & error code + if instead of requires.

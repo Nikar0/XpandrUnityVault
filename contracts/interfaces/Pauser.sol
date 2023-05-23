@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 // OpenZeppelin Contracts (last updated v4.7.0) (security/Pausable.sol)
 
-pragma solidity >=0.8.0 <=0.9.0;
-
-import "@openzeppelin/contracts/utils/Context.sol";
+pragma solidity ^0.8.19;
 
 /**
 @notice - Modified version of OZ's Pausable.sol, using uint instead of bool &error codes w/ Ifs 
@@ -23,7 +21,7 @@ import "@openzeppelin/contracts/utils/Context.sol";
 error NotPaused();
 error Paused();
 
-abstract contract Pauser is Context {
+abstract contract Pauser {
     /**
      * @dev Emitted when the pause is triggered by `account`.
      */

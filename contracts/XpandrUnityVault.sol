@@ -136,10 +136,9 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         if(assets > asset.balanceOf(owner)){revert XpandrErrors.OverCap();}
 
         lastUserDeposit[msg.sender] = uint64(block.timestamp);
-
-        asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
         emit Deposit(msg.sender, receiver, assets, shares);
 
+        asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
         _mint(msg.sender, shares);
         _earn();
 
@@ -158,13 +157,12 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         if(shares > ERC20(address(this)).balanceOf(_owner)){revert XpandrErrors.OverCap();}
        
         _burn(_owner, shares);
-        _collect(assets);
-
         uint assetBal = asset.balanceOf(address(this));
         if (assetBal > assets) {assetBal = assets;}
 
         emit Withdraw(msg.sender, receiver, _owner, assetBal, shares);
-        
+        _collect(assets);
+       
         if(WITHDRAW_FEE != 0){
             uint withdrawFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR;
             
@@ -179,6 +177,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     }
 
     function _harvest(address caller) internal whenNotPaused {
+        emit Harvest(caller);
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
         uint outputBal = ERC20(equal).balanceOf(address(this));
 
@@ -186,7 +185,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
             _chargeFees(caller);
             _addLiquidity();
         }
-        emit Harvest(caller);
         _earn();
     }
 

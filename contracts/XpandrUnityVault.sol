@@ -321,7 +321,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         //FeeDivisor is halved for cheaper divisions with >> 500 instead of 1000. As such, using correct value for condition check here.
         if(sum > uint64(1000)){revert XpandrErrors.OverCap();}
-        if(_recipient != address(0) && _recipient != _recipient){feeRecipient = _recipient;}
+        if(_recipient != address(0) && _recipient != feeRecipient){feeRecipient = _recipient;}
 
         emit SetFeesAndRecipient(_withdrawFee, sum, feeRecipient);
 

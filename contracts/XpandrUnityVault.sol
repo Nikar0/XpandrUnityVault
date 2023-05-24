@@ -72,7 +72,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     // Fee Structure
     uint64 public constant FEE_DIVISOR = 1000;               
     uint64 public platformFee = 35;                        // 3.5% Platform fee cap
-    uint64 public withdrawFee = 0;                         // 0% withdraw fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0 or 0.1%
+    uint64 public withdrawFee;                             // 0% withdraw fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0 or 0.1%
     uint64 public treasuryFee = 590;
     uint64 public callFee = 120;
     uint64 public stratFee = 290;  
@@ -115,7 +115,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         }
 
         rewardTokens.push(equal);
-        harvestOnDeposit = 0;
         lastHarvest = uint64(block.timestamp);
         _addAllowance();
     }
@@ -172,7 +171,9 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
+        if(harvestOnDeposit != 0){
         if(uint64(block.timestamp) < lastHarvest + uint64(delay)){revert XpandrErrors.UnderTimeLock();}
+        }
         _harvest(msg.sender);
     }
 
@@ -235,8 +236,13 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     function _addLiquidity() internal {
         uint equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToWftmPath, address(this), uint64(block.timestamp + 30));
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToMpxPath, address(this), uint64(block.timestamp + 30));
+        (uint ftmOut,) = IEqualizerRouter(router).getAmountOut(equalHalf, equal, wftm);
+        (uint mpxOut,) = IEqualizerRouter(router).getAmountOut(equalHalf, equal, mpx);
+        uint256 minFtmOut = ftmOut - (ftmOut * 2 / 100);
+        uint256 minMpxOut = mpxOut - (mpxOut * 2 / 100);
+
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minFtmOut , equalToWftmPath, address(this), uint64(block.timestamp + 30));
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minMpxOut, equalToMpxPath, address(this), uint64(block.timestamp + 30));
 
         uint t1Bal = ERC20(wftm).balanceOf(address(this));
         uint t2Bal = ERC20(mpx).balanceOf(address(this));

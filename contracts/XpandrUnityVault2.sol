@@ -42,7 +42,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
                           VARIABLES & EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event Harvest(address indexed harvester);
+    event Harvest(address indexed harvester, uint64 timestamp);
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
     event SetFeeToken(address indexed newFeeToken);
     event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
@@ -72,18 +72,17 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
     IEqualizerRouter.Routes[] public customPath;
 
     // Fee Structure
-    uint64 public constant FEE_DIVISOR = 500;               // Halved for cheaper divisions with >> 500 instead of / 1000
-    uint64 public PLATFORM_FEE = 35;                        // 3.5% Platform fee cap
-    uint64 public WITHDRAW_FEE = 0;                         // 0% withdrawal fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0 or 0.1%
-    uint64 public CALL_FEE = 120;
-    uint64 public XPANDR_FEE = 880;
+    uint64 public constant FEE_DIVISOR = 1000;               
+    uint64 public platformFee = 35;                          // 3.5% Platform fee cap
+    uint64 public withdrawFee;                               // 0% withdraw fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0 or 0.1%
+    uint64 public callFee = 120;
+    uint64 public xpandrFee = 880;
 
     // Controllers
     uint64 public delay;
-    uint128 internal lastHarvest;                           // Safeguard only allows harvest being called if > delay
-    bool internal constant stable = false;
-    uint8 internal harvestOnDeposit;   
-    uint public vaultProfit;                                // Excludes performance fees                             
+    uint64 internal lastHarvest;                            // Safeguard only allows harvest being called if > delay
+    uint128 public vaultProfit;                               // Excludes performance fees 
+    uint8 internal harvestOnDeposit;                           
     mapping(address => uint64) internal lastUserDeposit;    //Safeguard only allows same user deposits if > delay
 
     constructor(
@@ -92,6 +91,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
         address _router,
         address _feeToken,
         address _xpandrRecipient,
+        address _strategist,
         IEqualizerRouter.Routes[] memory _equalToWftmPath,
         IEqualizerRouter.Routes[] memory _equalToMpxPath
         )
@@ -105,6 +105,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
         router = _router;
         feeToken = _feeToken;
         xpandrRecipient = _xpandrRecipient;
+        strategist = _strategist;
         delay = 600; // 10 mins
 
         for (uint i; i < _equalToWftmPath.length; ++i) {
@@ -116,9 +117,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
         }
 
         rewardTokens.push(equal);
-        harvestOnDeposit = 0;
         lastHarvest = uint64(block.timestamp);
-        totalSupply = type(uint).max;
         _addAllowance();
     }
 
@@ -132,19 +131,21 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
 
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
     function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
-        if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp) + delay){revert XpandrErrors.UnderTimeLock();}}
+        if(lastUserDeposit[msg.sender] != 0) {if(uint64(block.timestamp) < lastUserDeposit[msg.sender] + delay) {revert XpandrErrors.UnderTimeLock();}}
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
 
         shares = convertToShares(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
+        if(assets > asset.balanceOf(owner)){revert XpandrErrors.OverCap();}
+
         lastUserDeposit[msg.sender] = uint64(block.timestamp);
+        emit Deposit(msg.sender, receiver, assets, shares);
 
         asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
         _mint(msg.sender, shares);
         _earn();
-        emit Deposit(msg.sender, receiver, assets, shares);
 
-        if(harvestOnDeposit == 1) {afterDeposit(assets, shares);}
+        if(harvestOnDeposit != 0) {afterDeposit(assets, shares);}
     }
 
     function withdrawAll() external {
@@ -163,22 +164,25 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
 
         uint assetBal = asset.balanceOf(address(this));
         if (assetBal > assets) {assetBal = assets;}
+        emit Withdraw(msg.sender, receiver, _owner, assets, shares);
 
-        if(WITHDRAW_FEE != 0){
-            uint withdrawFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR; 
+        if(withdrawFee != 0){
+            uint withdrawFeeAmount = assetBal * withdrawFee / FEE_DIVISOR; 
             asset.safeTransfer(receiver, assetBal - withdrawFeeAmount);
         } else {asset.safeTransfer(receiver, assetBal);}
 
-        emit Withdraw(msg.sender, receiver, _owner, assets, shares);
     }
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
-        if(lastHarvest < uint128(block.timestamp + delay)){revert XpandrErrors.UnderTimeLock();}
+        if(uint64(block.timestamp) < lastHarvest + delay){revert XpandrErrors.UnderTimeLock();}
         _harvest(msg.sender);
     }
 
     function _harvest(address caller) internal whenNotPaused {
+        lastHarvest = uint64(block.timestamp);
+        emit Harvest(caller, lastHarvest);
+
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
         uint outputBal = ERC20(equal).balanceOf(address(this));
 
@@ -187,7 +191,6 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
             _addLiquidity();
         }
         _earn();
-        emit Harvest(caller);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -209,30 +212,36 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
     }
 
     function _chargeFees(address caller) internal {                   
-        uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
+        uint toFee = ERC20(equal).balanceOf(address(this)) * platformFee / FEE_DIVISOR;
         uint toProfit = ERC20(equal).balanceOf(address(this)) - toFee;
-        (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
-        vaultProfit = vaultProfit + uint128(usdProfit * 1e18);
 
-        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, stable, address(this), uint64(block.timestamp));
-    
+        (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
+        vaultProfit = vaultProfit + uint128(usdProfit / 1e12);
+
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), uint64(block.timestamp + 30));
+
         uint feeBal = ERC20(feeToken).balanceOf(address(this));
 
-        uint callFee = feeBal * CALL_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).transfer(caller, callFee);
+        uint callAmt = feeBal * callFee / FEE_DIVISOR;
+        ERC20(feeToken).transfer(caller, callAmt);
 
-        uint xpandrFee = feeBal * XPANDR_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(xpandrRecipient, xpandrFee);
+        uint xpandrAmt = feeBal * xpandrFee / FEE_DIVISOR;
+        ERC20(feeToken).safeTransfer(xpandrRecipient, xpandrAmt);
     }
 
     function _addLiquidity() internal {
         uint equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToWftmPath, address(this), uint64(block.timestamp));
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToMpxPath, address(this), uint64(block.timestamp));
+        (uint ftmOut,) = IEqualizerRouter(router).getAmountOut(equalHalf, equal, wftm);
+        (uint mpxOut,) = IEqualizerRouter(router).getAmountOut(equalHalf, equal, mpx);
+        uint256 minFtmOut = ftmOut - (ftmOut * 2 / 100);
+        uint256 minMpxOut = mpxOut - (mpxOut * 2 / 100);
+
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minFtmOut, equalToWftmPath, address(this), uint64(block.timestamp + 30));
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minMpxOut, equalToMpxPath, address(this), uint64(block.timestamp + 30));
 
         uint t1Bal = ERC20(wftm).balanceOf(address(this));
         uint t2Bal = ERC20(mpx).balanceOf(address(this));
-        IEqualizerRouter(router).addLiquidity(wftm, mpx, stable, t1Bal, t2Bal, 1, 1, address(this), uint64(block.timestamp));
+        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), uint64(block.timestamp + 30));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -246,7 +255,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
         if (outputBal != 0) {
             (wrappedOut,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
         } 
-        return wrappedOut * PLATFORM_FEE >> FEE_DIVISOR * CALL_FEE >> FEE_DIVISOR;
+        return wrappedOut * platformFee / FEE_DIVISOR * callFee / FEE_DIVISOR;
     }
 
     function idleFunds() external view returns (uint) {
@@ -291,8 +300,8 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
     // Pauses the vault & executes emergency withdraw
     function panic() external onlyAdmin {
         pause();
-        IEqualizerGauge(gauge).withdraw(balanceOfPool());
         emit Panic(msg.sender);
+        IEqualizerGauge(gauge).withdraw(balanceOfPool());
     }
 
     function pause() public onlyAdmin {
@@ -314,15 +323,14 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
         if(_platformFee > 35){revert XpandrErrors.OverCap();}
         if(_withdrawFee != 0 || _withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _recipientFee;
-        //FeeDivisor is halved for cheaper divisions with >> 500 instead of  1000. As such, using correct value for condition check here.
-        if(sum > uint16(1000)){revert XpandrErrors.OverCap();}
+        if(sum > FEE_DIVISOR){revert XpandrErrors.OverCap();}
         if(_recipient != address(0) && _recipient != xpandrRecipient){xpandrRecipient = _recipient;}
 
-        PLATFORM_FEE = _platformFee;
-        CALL_FEE = _callFee;
-        WITHDRAW_FEE = _withdrawFee;
-        XPANDR_FEE = _recipientFee;
-        emit SetFeesAndRecipient(_withdrawFee, sum, xpandrRecipient);
+        platformFee = _platformFee;
+        callFee = _callFee;
+        withdrawFee = _withdrawFee;
+        xpandrFee = _recipientFee;
+        emit SetFeesAndRecipient(withdrawFee, sum, xpandrRecipient);
     }
 
     function setRouterOrGauge(address _router, address _gauge) external onlyOwner {
@@ -349,10 +357,10 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
    function setFeeToken(address _feeToken) external onlyAdmin {
        if(_feeToken == address(0) || _feeToken == feeToken){revert XpandrErrors.InvalidTokenOrPath();}
        feeToken = _feeToken;
+       emit SetFeeToken(_feeToken);
       
        ERC20(_feeToken).safeApprove(router, 0);
        ERC20(_feeToken).safeApprove(router, type(uint).max);
-       emit SetFeeToken(_feeToken);
     }
 
     // Sets harvestOnDeposit
@@ -383,7 +391,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
         
         ERC20(_token).safeApprove(router, 0);
         ERC20(_token).safeApprove(router, type(uint).max);
-        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, customPath, address(this), uint64(block.timestamp));
+        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, customPath, address(this), uint64(block.timestamp + 30));
    
         emit CustomTx(_token, bal);
     }

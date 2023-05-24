@@ -31,7 +31,7 @@ import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
 import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
 import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 
-contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
+contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint;
 
@@ -71,12 +71,12 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
 
     // Fee Structure
     uint64 public constant FEE_DIVISOR = 1000;               
-    uint64 public PLATFORM_FEE = 35;                        // 3.5% Platform fee cap
-    uint64 public WITHDRAW_FEE = 0;                         // 0% withdraw fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0 or 0.1%
-    uint64 public TREASURY_FEE = 590;
-    uint64 public CALL_FEE = 120;
-    uint64 public STRAT_FEE = 290;  
-    uint64 public RECIPIENT_FEE;
+    uint64 public platformFee = 35;                        // 3.5% Platform fee cap
+    uint64 public withdrawFee = 0;                         // 0% withdraw fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0 or 0.1%
+    uint64 public treasuryFee = 590;
+    uint64 public callFee = 120;
+    uint64 public stratFee = 290;  
+    uint64 public recipientFee;
 
     // Controllers
     uint64 internal lastHarvest;                             // Safeguard only allows harvest being called if > delay
@@ -164,8 +164,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         if (assetBal > assets) {assetBal = assets;}
         emit Withdraw(msg.sender, receiver, _owner, assetBal, shares);
 
-        if(WITHDRAW_FEE != 0){
-            uint withdrawFeeAmount = assetBal * WITHDRAW_FEE / FEE_DIVISOR;
+        if(withdrawFee != 0){
+            uint withdrawFeeAmount = assetBal * withdrawFee / FEE_DIVISOR;
             asset.safeTransfer(receiver, assetBal - withdrawFeeAmount);
         } else {asset.safeTransfer(receiver, assetBal);}
     }
@@ -208,39 +208,39 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     }
 
     function _chargeFees(address caller) internal {                   
-        uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE / FEE_DIVISOR;
+        uint toFee = ERC20(equal).balanceOf(address(this)) * platformFee / FEE_DIVISOR;
         uint toProfit = ERC20(equal).balanceOf(address(this)) - toFee;
 
         (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
-        vaultProfit = vaultProfit + uint128(usdProfit * 1e18);
+        vaultProfit = vaultProfit + uint128(usdProfit / 1e12);
 
-        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), uint64(block.timestamp + 60));
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), uint64(block.timestamp + 30));
 
         uint feeBal = ERC20(feeToken).balanceOf(address(this));
 
-        uint callFee = feeBal * CALL_FEE / FEE_DIVISOR;
-        ERC20(feeToken).transfer(caller, callFee);
+        uint callAmt = feeBal * callFee / FEE_DIVISOR;
+        ERC20(feeToken).transfer(caller, callAmt);
 
-        if(RECIPIENT_FEE != 0){
-        uint recipientFee = feeBal * RECIPIENT_FEE / FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(feeRecipient, recipientFee);
+        if(recipientFee != 0){
+        uint recipientAmt = feeBal * recipientFee / FEE_DIVISOR;
+        ERC20(feeToken).safeTransfer(feeRecipient, recipientAmt);
         }
 
-        uint treasuryFee = feeBal * TREASURY_FEE / FEE_DIVISOR;
-        ERC20(feeToken).transfer(treasury, treasuryFee);
+        uint treasuryAmt = feeBal * treasuryFee / FEE_DIVISOR;
+        ERC20(feeToken).transfer(treasury, treasuryAmt);
                                                 
-        uint stratFee = feeBal * STRAT_FEE / FEE_DIVISOR;
-        ERC20(feeToken).transfer(strategist, stratFee);
+        uint stratAmt = feeBal * stratFee / FEE_DIVISOR;
+        ERC20(feeToken).transfer(strategist, stratAmt);
     }
 
     function _addLiquidity() internal {
         uint equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToWftmPath, address(this), uint64(block.timestamp + 60));
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToMpxPath, address(this), uint64(block.timestamp + 60));
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToWftmPath, address(this), uint64(block.timestamp + 30));
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToMpxPath, address(this), uint64(block.timestamp + 30));
 
         uint t1Bal = ERC20(wftm).balanceOf(address(this));
         uint t2Bal = ERC20(mpx).balanceOf(address(this));
-        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), uint64(block.timestamp + 60));
+        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), uint64(block.timestamp + 30));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -254,7 +254,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         if (outputBal != 0) {
             (wrappedOut,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
         } 
-        return wrappedOut * PLATFORM_FEE / FEE_DIVISOR * CALL_FEE / FEE_DIVISOR;
+        return wrappedOut * platformFee / FEE_DIVISOR * callFee / FEE_DIVISOR;
     }
 
     function idleFunds() external view returns (uint) {
@@ -324,14 +324,14 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         if(sum > FEE_DIVISOR){revert XpandrErrors.OverCap();}
         if(_recipient != address(0) && _recipient != feeRecipient){feeRecipient = _recipient;}
 
-        emit SetFeesAndRecipient(_withdrawFee, sum, feeRecipient);
+        emit SetFeesAndRecipient(withdrawFee, sum, feeRecipient);
 
-        PLATFORM_FEE = _platformFee;
-        CALL_FEE = _callFee;
-        STRAT_FEE = _stratFee;
-        WITHDRAW_FEE = _withdrawFee;
-        TREASURY_FEE = _treasuryFee;
-        RECIPIENT_FEE = _recipientFee;
+        platformFee = _platformFee;
+        callFee = _callFee;
+        stratFee = _stratFee;
+        withdrawFee = _withdrawFee;
+        treasuryFee = _treasuryFee;
+        recipientFee = _recipientFee;
     }
 
     function setRouterOrGauge(address _router, address _gauge) external onlyOwner {

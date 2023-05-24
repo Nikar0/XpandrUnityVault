@@ -77,7 +77,7 @@ abstract contract Pauser {
      */
     function _requireNotPaused() internal view virtual {
         //require(paused() != 0, "Pausable: paused");
-        if(paused() == 0){revert Paused();}
+        if(paused() != 0){revert Paused();}
     }
 
     /**
@@ -85,7 +85,7 @@ abstract contract Pauser {
      */
     function _requirePaused() internal view virtual {
         //require(paused() == 1, "Pausable: not paused");
-        if(paused() != 0){revert NotPaused();}
+        if(paused() != 1){revert NotPaused();}
 
     }
 

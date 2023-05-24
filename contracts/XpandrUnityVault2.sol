@@ -278,7 +278,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
     }
 
     // Function for UIs to display the current value of 1 vault share
-    function getPricePerFullShare() public view returns (uint) {
+    function getPricePerFullShare() external view returns (uint) {
         return totalSupply == 0 ? 1e18 : totalAssets() * 1e18 / totalSupply;
     }
 

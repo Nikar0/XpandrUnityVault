@@ -19,7 +19,7 @@ https://github.com/transmissions11/solmate
 @notice - AccessControl = modified solmate Owned.sol w/ added Strategist + error codes.
 **/
 
-pragma solidity 0.8.19;
+pragma solidity ^0.8.19;
 
 import {ReentrancyGuard} from "./interfaces/solmate//ReentrancyGuard.sol";
 import {ERC20, ERC4626} from "./interfaces/solmate/ERC4626.sol";

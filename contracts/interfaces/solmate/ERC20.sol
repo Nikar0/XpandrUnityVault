@@ -111,7 +111,7 @@ abstract contract ERC20 {
 
     /*//////////////////////////////////////////////////////////////
                              EIP-2612 LOGIC
-    //////////////////////////////////////////////////////////////*/
+    //////////////////////////////////////////////////////////////
 
     function permit(
         address owner,
@@ -157,7 +157,7 @@ abstract contract ERC20 {
         }
 
         emit Approval(owner, spender, value);
-    }
+    }*/
 
     function DOMAIN_SEPARATOR() public view virtual returns (bytes32) {
         return block.chainid == INITIAL_CHAIN_ID ? INITIAL_DOMAIN_SEPARATOR : computeDomainSeparator();

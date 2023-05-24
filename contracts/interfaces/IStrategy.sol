@@ -1,6 +1,6 @@
 //SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.19;
+pragma solidity ^0.8.19;
 
 import "./solmate/ERC20.sol";
 
@@ -16,7 +16,7 @@ interface IStrategy {
     function panic() external;
     function pause() external;
     function unpause() external;
-    function paused() external view returns (bool);
+    function paused() external view returns (uint8);
     function harvestOnDeposit() external view returns(uint);
     function harvestProfit() external view returns(uint);
 }

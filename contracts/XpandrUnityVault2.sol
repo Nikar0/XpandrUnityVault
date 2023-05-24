@@ -24,9 +24,9 @@ https://github.com/transmissions11/solmate
         - Pauser = modified OZ Pausable.sol using uint8 instead of bool + error codes.
 **/
 
-pragma solidity 0.8.19;
+pragma solidity ^0.8.19;
 
-import {ERC20, ERC4626, FixedPointMathLib} from "./interfaces/solmate/ERC4626mod.sol";
+import {ERC20, ERC4626, FixedPointMathLib} from "./interfaces/solmate/ERC4626light.sol";
 import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
 import {AccessControl} from "./interfaces/AccessControl.sol";
 import {Pauser} from "./interfaces/Pauser.sol";
@@ -155,16 +155,16 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
     // Withdraw 'asset' from farm into vault & sends to receiver.
     function withdraw(uint shares, address receiver, address _owner) public override returns (uint assets) {
         if(tx.origin != receiver && tx.origin != _owner){revert XpandrErrors.NotAccountOwner();}
+        if(shares > ERC20(address(this)).balanceOf(msg.sender)){revert XpandrErrors.OverCap();}
         assets = convertToAssets(shares);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
-        if(shares > ERC20(address(this)).balanceOf(msg.sender)){revert XpandrErrors.OverCap();}
        
         _burn(_owner, shares);
+        emit Withdraw(msg.sender, receiver, _owner, assets, shares);
         _collect(assets);
 
         uint assetBal = asset.balanceOf(address(this));
         if (assetBal > assets) {assetBal = assets;}
-        emit Withdraw(msg.sender, receiver, _owner, assets, shares);
 
         if(withdrawFee != 0){
             uint withdrawFeeAmount = assetBal * withdrawFee / FEE_DIVISOR; 

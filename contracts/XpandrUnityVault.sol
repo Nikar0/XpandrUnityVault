@@ -129,7 +129,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
 
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
     function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
-        if(lastUserDeposit[msg.sender] != 0) {if(lastUserDeposit[msg.sender] < uint64(block.timestamp + delay)) {revert XpandrErrors.UnderTimeLock();}}
+        if(lastUserDeposit[msg.sender] != 0) {if(uint64(block.timestamp) < lastUserDeposit[msg.sender] + delay) {revert XpandrErrors.UnderTimeLock();}}
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
         shares = convertToShares(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
@@ -165,14 +165,13 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
        
         if(WITHDRAW_FEE != 0){
             uint withdrawFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR;
-            
             asset.safeTransfer(receiver, assetBal - withdrawFeeAmount);
         } else {asset.safeTransfer(receiver, assetBal);}
     }
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
-        if(lastHarvest < uint64(block.timestamp) + delay){revert XpandrErrors.UnderTimeLock();}
+        if(uint64(block.timestamp) < lastHarvest + delay){revert XpandrErrors.UnderTimeLock();}
         _harvest(msg.sender);
     }
 

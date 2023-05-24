@@ -39,7 +39,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
                           VARIABLES & EVENTS
     //////////////////////////////////////////////////////////////*/
     
-    event Harvest(address indexed harvester);
+    event Harvest(address indexed harvester, uint64 timestamp);
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
     event SetFeeToken(address indexed newFeeToken);
     event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
@@ -176,7 +176,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     }
 
     function _harvest(address caller) internal whenNotPaused {
-        emit Harvest(caller);
+        lastHarvest = uint64(block.timestamp);
+        emit Harvest(caller, lastHarvest);
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
         uint outputBal = ERC20(equal).balanceOf(address(this));
 

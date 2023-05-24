@@ -70,7 +70,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     IEqualizerRouter.Routes[] public customPath;
 
     // Fee Structure
-    uint64 public constant FEE_DIVISOR = 500;               // Halved for cheaper divisions with >> 500 instead of / 1000
+    uint64 public constant FEE_DIVISOR = 1000;               
     uint64 public PLATFORM_FEE = 35;                        // 3.5% Platform fee cap
     uint64 public WITHDRAW_FEE = 0;                         // 0% withdraw fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0 or 0.1%
     uint64 public TREASURY_FEE = 590;
@@ -82,7 +82,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     uint64 internal lastHarvest;                             // Safeguard only allows harvest being called if > delay
     uint128 public vaultProfit;                              // Excludes performance fees
     uint128 public delay;
-    bool internal constant stable = false;
     uint8 internal harvestOnDeposit;                                    
     mapping(address => uint64) internal lastUserDeposit;     //Safeguard only allows same user deposits if > delay
 
@@ -91,6 +90,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         address _gauge,
         address _router,
         address _feeToken,
+        address _strategist,
         IEqualizerRouter.Routes[] memory _equalToWftmPath,
         IEqualizerRouter.Routes[] memory _equalToMpxPath
         )
@@ -103,6 +103,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         gauge = _gauge;
         router = _router;
         feeToken = _feeToken;
+        strategist = _strategist;
         delay = 600; // 10 mins
 
         for (uint i; i < _equalToWftmPath.length; ++i) {
@@ -164,7 +165,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         emit Withdraw(msg.sender, receiver, _owner, assetBal, shares);
 
         if(WITHDRAW_FEE != 0){
-            uint withdrawFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR;
+            uint withdrawFeeAmount = assetBal * WITHDRAW_FEE / FEE_DIVISOR;
             asset.safeTransfer(receiver, assetBal - withdrawFeeAmount);
         } else {asset.safeTransfer(receiver, assetBal);}
     }
@@ -207,39 +208,39 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     }
 
     function _chargeFees(address caller) internal {                   
-        uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
+        uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE / FEE_DIVISOR;
         uint toProfit = ERC20(equal).balanceOf(address(this)) - toFee;
 
         (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
         vaultProfit = vaultProfit + uint128(usdProfit * 1e18);
 
-        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, stable, address(this), uint64(block.timestamp));
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), uint64(block.timestamp + 60));
 
         uint feeBal = ERC20(feeToken).balanceOf(address(this));
 
-        uint callFee = feeBal * CALL_FEE >> FEE_DIVISOR;
+        uint callFee = feeBal * CALL_FEE / FEE_DIVISOR;
         ERC20(feeToken).transfer(caller, callFee);
 
         if(RECIPIENT_FEE != 0){
-        uint recipientFee = feeBal * RECIPIENT_FEE >> FEE_DIVISOR;
+        uint recipientFee = feeBal * RECIPIENT_FEE / FEE_DIVISOR;
         ERC20(feeToken).safeTransfer(feeRecipient, recipientFee);
         }
 
-        uint treasuryFee = feeBal * TREASURY_FEE >> FEE_DIVISOR;
+        uint treasuryFee = feeBal * TREASURY_FEE / FEE_DIVISOR;
         ERC20(feeToken).transfer(treasury, treasuryFee);
                                                 
-        uint stratFee = feeBal * STRAT_FEE >> FEE_DIVISOR;
+        uint stratFee = feeBal * STRAT_FEE / FEE_DIVISOR;
         ERC20(feeToken).transfer(strategist, stratFee);
     }
 
     function _addLiquidity() internal {
         uint equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToWftmPath, address(this), uint64(block.timestamp));
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToMpxPath, address(this), uint64(block.timestamp));
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToWftmPath, address(this), uint64(block.timestamp + 60));
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToMpxPath, address(this), uint64(block.timestamp + 60));
 
         uint t1Bal = ERC20(wftm).balanceOf(address(this));
         uint t2Bal = ERC20(mpx).balanceOf(address(this));
-        IEqualizerRouter(router).addLiquidity(wftm, mpx, stable, t1Bal, t2Bal, 1, 1, address(this), uint64(block.timestamp));
+        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), uint64(block.timestamp + 60));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -253,7 +254,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         if (outputBal != 0) {
             (wrappedOut,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
         } 
-        return wrappedOut * PLATFORM_FEE >> FEE_DIVISOR * CALL_FEE >> FEE_DIVISOR;
+        return wrappedOut * PLATFORM_FEE / FEE_DIVISOR * CALL_FEE / FEE_DIVISOR;
     }
 
     function idleFunds() external view returns (uint) {
@@ -320,8 +321,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         if(_platformFee > 35){revert XpandrErrors.OverCap();}
         if(_withdrawFee != 0 || _withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
-        //FeeDivisor is halved for cheaper divisions with >> 500 instead of 1000. As such, using correct value for condition check here.
-        if(sum > uint64(1000)){revert XpandrErrors.OverCap();}
+        if(sum > FEE_DIVISOR){revert XpandrErrors.OverCap();}
         if(_recipient != address(0) && _recipient != feeRecipient){feeRecipient = _recipient;}
 
         emit SetFeesAndRecipient(_withdrawFee, sum, feeRecipient);

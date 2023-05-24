@@ -142,7 +142,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         _mint(msg.sender, shares);
         _earn();
 
-        if(harvestOnDeposit == 1) {afterDeposit(assets, shares);}
+        if(harvestOnDeposit != 0) {afterDeposit(assets, shares);}
     }
 
     function withdrawAll() external {
@@ -157,12 +157,12 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
         if(shares > ERC20(address(this)).balanceOf(_owner)){revert XpandrErrors.OverCap();}
        
         _burn(_owner, shares);
+        _collect(assets);
+
         uint assetBal = asset.balanceOf(address(this));
         if (assetBal > assets) {assetBal = assets;}
-
         emit Withdraw(msg.sender, receiver, _owner, assetBal, shares);
-        _collect(assets);
-       
+
         if(WITHDRAW_FEE != 0){
             uint withdrawFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR;
             asset.safeTransfer(receiver, assetBal - withdrawFeeAmount);

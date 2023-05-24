@@ -146,7 +146,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
     }
 
     function withdrawAll() external {
-        withdraw(asset.balanceOf(msg.sender), msg.sender, msg.sender);
+        withdraw(ERC20(address(this)).balanceOf(msg.sender), msg.sender, msg.sender);
     }
 
     // Withdraw 'asset' from farm into vault & sends to receiver.
@@ -171,7 +171,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser{
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
-        if(uint64(block.timestamp) < lastHarvest + delay){revert XpandrErrors.UnderTimeLock();}
+        if(uint64(block.timestamp) < lastHarvest + uint64(delay)){revert XpandrErrors.UnderTimeLock();}
         _harvest(msg.sender);
     }
 

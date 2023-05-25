@@ -106,12 +106,14 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         strategist = _strategist;
         delay = 600; // 10 mins
 
-        for (uint i; i < _equalToWftmPath.length; ++i) {
+        for (uint i; i < _equalToWftmPath.length;) {
             equalToWftmPath.push(_equalToWftmPath[i]);
+            unchecked{++i;}
         }
 
-        for (uint i; i < _equalToMpxPath.length; ++i) {
+        for (uint i; i < _equalToMpxPath.length;) {
             equalToMpxPath.push(_equalToMpxPath[i]);
+            unchecked{++i;}
         }
 
         rewardTokens.push(equal);
@@ -346,13 +348,15 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     function setPaths(IEqualizerRouter.Routes[] memory _equalToMpx, IEqualizerRouter.Routes[] memory _equalToWftm) external onlyAdmin{
         if(_equalToMpx.length != 0){
-            for (uint i; i < _equalToMpx.length; ++i) {
+            for (uint i; i < _equalToMpx.length;) {
             equalToMpxPath.push(_equalToMpx[i]);
+            unchecked{++i;}
             }
         }
         if(_equalToWftm.length != 0){
-            for (uint i; i < _equalToWftm.length; ++i) {
+            for (uint i; i < _equalToWftm.length;) {
             equalToWftmPath.push(_equalToWftm[i]);
+            unchecked{++i;}
             }
         }
         emit SetPaths(equalToMpxPath, equalToWftmPath);
@@ -389,8 +393,9 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         if(_amount == 0) {bal = ERC20(_token).balanceOf(address(this));}
         else {bal = _amount;}
         
-        for (uint i; i < _path.length; ++i) {
+        for (uint i; i < _path.length;) {
             customPath.push(_path[i]);
+            unchecked{++i;}
         }
 
         emit CustomTx(_token, bal);

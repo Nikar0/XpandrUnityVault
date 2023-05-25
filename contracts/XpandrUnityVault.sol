@@ -134,9 +134,9 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
         if(lastUserDeposit[receiver] != 0) {if(_timestamp() < lastUserDeposit[receiver] + delay) {revert XpandrErrors.UnderTimeLock();}}
+        if(assets > asset.balanceOf(receiver)){revert XpandrErrors.OverCap();}
         shares = convertToShares(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
-        if(assets > asset.balanceOf(owner)){revert XpandrErrors.OverCap();}
 
         lastUserDeposit[receiver] = _timestamp();
         emit Deposit(receiver, receiver, assets, shares);
@@ -160,7 +160,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
        
         _burn(_owner, shares);
-        emit Withdraw(msg.sender, receiver, _owner, assets, shares);
+        emit Withdraw(_owner, receiver, _owner, assets, shares);
         _collect(assets);
 
         uint assetBal = asset.balanceOf(address(this));

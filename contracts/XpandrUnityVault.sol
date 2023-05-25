@@ -171,7 +171,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
-        if(harvestOnDeposit != 0){
+        if(harvestOnDeposit != 1){
         if(uint64(block.timestamp) < lastHarvest + uint64(delay)){revert XpandrErrors.UnderTimeLock();}
         }
         _harvest(msg.sender);
@@ -238,8 +238,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         uint equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
         (uint ftmOut,) = IEqualizerRouter(router).getAmountOut(equalHalf, equal, wftm);
         (uint mpxOut,) = IEqualizerRouter(router).getAmountOut(equalHalf, equal, mpx);
-        uint256 minFtmOut = ftmOut - (ftmOut * 2 / 100);
-        uint256 minMpxOut = mpxOut - (mpxOut * 2 / 100);
+        uint minFtmOut = ftmOut - (ftmOut * 2 / 100);
+        uint minMpxOut = mpxOut - (mpxOut * 2 / 100);
 
         IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minFtmOut , equalToWftmPath, address(this), uint64(block.timestamp + 30));
         IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minMpxOut, equalToMpxPath, address(this), uint64(block.timestamp + 30));
@@ -323,14 +323,12 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
                                SETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function setFeesAndRecipient(uint64 _platformFee, uint64 _callFee, uint64 _stratFee, uint64 _withdrawFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyOwner {
+    function setFeesAndRecipient(uint64 _platformFee, uint64 _withdrawFee, uint64 _callFee, uint64 _stratFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyOwner {
         if(_platformFee > 35){revert XpandrErrors.OverCap();}
         if(_withdrawFee != 0 || _withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         if(sum > FEE_DIVISOR){revert XpandrErrors.OverCap();}
         if(_recipient != address(0) && _recipient != feeRecipient){feeRecipient = _recipient;}
-
-        emit SetFeesAndRecipient(withdrawFee, sum, feeRecipient);
 
         platformFee = _platformFee;
         callFee = _callFee;
@@ -338,6 +336,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         withdrawFee = _withdrawFee;
         treasuryFee = _treasuryFee;
         recipientFee = _recipientFee;
+        emit SetFeesAndRecipient(withdrawFee, sum, feeRecipient);
+
     }
 
     function setRouterOrGauge(address _router, address _gauge) external onlyOwner {

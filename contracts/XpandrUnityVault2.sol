@@ -80,10 +80,10 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
 
     // Controllers
     uint64 public delay;
-    uint64 internal lastHarvest;                            // Safeguard only allows harvest being called if > delay
-    uint128 public vaultProfit;                               // Excludes performance fees 
+    uint64 internal lastHarvest;                             // Safeguard only allows harvest being called if > delay
+    uint128 public vaultProfit;                              // Excludes performance fees 
     uint8 internal harvestOnDeposit;                           
-    mapping(address => uint64) internal lastUserDeposit;    //Safeguard only allows same user deposits if > delay
+    mapping(address => uint64) internal lastUserDeposit;     //Safeguard only allows same user deposits if > delay
 
     constructor(
         ERC20 _asset,
@@ -155,7 +155,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
     // Withdraw 'asset' from farm into vault & sends to receiver.
     function withdraw(uint shares, address receiver, address _owner) public override returns (uint assets) {
         if(tx.origin != receiver && tx.origin != _owner){revert XpandrErrors.NotAccountOwner();}
-        if(shares > ERC20(address(this)).balanceOf(msg.sender)){revert XpandrErrors.OverCap();}
+        if(shares > ERC20(address(this)).balanceOf(_owner)){revert XpandrErrors.OverCap();}
         assets = convertToAssets(shares);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
        
@@ -175,7 +175,9 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
-        if(uint64(block.timestamp) < lastHarvest + delay){revert XpandrErrors.UnderTimeLock();}
+        if(harvestOnDeposit != 1){
+        if(uint64(block.timestamp) < lastHarvest + uint64(delay)){revert XpandrErrors.UnderTimeLock();}
+        }
         _harvest(msg.sender);
     }
 
@@ -233,8 +235,8 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
         uint equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
         (uint ftmOut,) = IEqualizerRouter(router).getAmountOut(equalHalf, equal, wftm);
         (uint mpxOut,) = IEqualizerRouter(router).getAmountOut(equalHalf, equal, mpx);
-        uint256 minFtmOut = ftmOut - (ftmOut * 2 / 100);
-        uint256 minMpxOut = mpxOut - (mpxOut * 2 / 100);
+        uint minFtmOut = ftmOut - (ftmOut * 2 / 100);
+        uint minMpxOut = mpxOut - (mpxOut * 2 / 100);
 
         IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minFtmOut, equalToWftmPath, address(this), uint64(block.timestamp + 30));
         IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minMpxOut, equalToMpxPath, address(this), uint64(block.timestamp + 30));
@@ -319,7 +321,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser{
                                SETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function setFeesAndRecipient(uint64 _platformFee, uint64 _callFee, uint64 _withdrawFee, uint64 _recipientFee, address _recipient) external onlyOwner {
+    function setFeesAndRecipient(uint64 _platformFee, uint64 _withdrawFee, uint64 _callFee, uint64 _recipientFee, address _recipient) external onlyOwner {
         if(_platformFee > 35){revert XpandrErrors.OverCap();}
         if(_withdrawFee != 0 || _withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _recipientFee;

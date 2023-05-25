@@ -6,7 +6,8 @@
 @title  - XpandrUnityVault
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
-          Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers / Adjustable platform fee for promotional events w/ max cap.
+          Includes: feeToken switch / 0% withdraw fee default / Vault profit in USD / Adjustable platformFee for promo events w/ max cap at default.
+          Deposit & harvest buffers / Timestamp & Slippage protection
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 
@@ -16,6 +17,8 @@ https://eips.ethereum.org/EIPS/eip-4626
 
 Using solmate's gas optimized libs
 https://github.com/transmissions11/solmate
+
+Special thanks to 543 from Equalizer/Guru_Network for the brainstorming & QA
 
 @notice - AccessControl = modified solmate Owned.sol w/ added Strategist + error codes.
         - Pauser = modified OZ Pausable.sol using uint8 instead of bool + error codes.
@@ -56,6 +59,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit denominator
     address public feeToken;      // Switch for which token protocol receives fees in. In mind for Native & Stable but fits any Equal - X token swap. Streamlines POL portfolio.
     address[] public rewardTokens;
+    address[3] internal slippageTokens;
 
     // 3rd party contracts
     address public gauge;
@@ -116,7 +120,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
             equalToMpxPath.push(_equalToMpxPath[i]);
             unchecked{++i;}
         }
-
+        slippageTokens = [equal, wftm, mpx];
         rewardTokens.push(equal);
         lastHarvest = _timestamp();
         _addAllowance();
@@ -237,16 +241,13 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     function _addLiquidity() internal {
         uint equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 1, equalToWftmPath, address(this), lastHarvest);
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 1, equalToMpxPath, address(this), lastHarvest);
+        (uint minAmt1, uint minAmt2) = slippage(equalHalf);
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt1, equalToWftmPath, address(this), lastHarvest);
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt2, equalToMpxPath, address(this), lastHarvest);
 
         uint t1Bal = ERC20(wftm).balanceOf(address(this));
         uint t2Bal = ERC20(mpx).balanceOf(address(this));
         IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), lastHarvest);
-    }
-
-    function _timestamp() internal view returns (uint64){
-        return uint64(IEqualizerPair(address(asset)).getReserves()[2]);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -317,6 +318,31 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         _unpause();
         _addAllowance();
         _earn();
+    }
+
+    //Guards against timestamp spoofing
+    function _timestamp() internal view returns (uint64){
+        return uint64(IEqualizerPair(address(asset)).getReserves()[2]);
+    }
+
+    //Guards against sandwich attacks
+    function slippage(uint _amount) internal view returns(uint minAmt1, uint minAmt2){
+        uint[] memory t1Amts = IEqualizerPair(address(asset)).sample(slippageTokens[0], _amount, 5, 2);
+    
+        for(uint i; i < t1Amts.length;){
+            minAmt1 = minAmt1 + t1Amts[i];
+            unchecked{++i;}
+        }
+        minAmt1 = (minAmt1 / 10);
+
+        uint[] memory t2Amts = IEqualizerPair(address(asset)).sample(slippageTokens[1], minAmt1, 5, 2);
+        minAmt1 = (minAmt1 - minAmt1 * 2) / 100;
+
+        for(uint i; i < t2Amts.length;){
+            minAmt2 = minAmt2 + t2Amts[i];
+            unchecked{++i;}
+        }
+        minAmt2 = (minAmt2 / 10) - ((minAmt2 / 10) * 2 ) / 100;
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -28,6 +28,7 @@ import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
 import {AccessControl} from "./interfaces/AccessControl.sol";
 import {Pauser} from "./interfaces/Pauser.sol";
 import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
+import {IEqualizerPair} from "./interfaces/IEqualizerPair.sol";
 import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
 import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 
@@ -117,7 +118,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         }
 
         rewardTokens.push(equal);
-        lastHarvest = uint64(block.timestamp);
+        lastHarvest = _timestamp();
         _addAllowance();
     }
 
@@ -132,12 +133,12 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
     function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
-        if(lastUserDeposit[receiver] != 0) {if(uint64(block.timestamp) < lastUserDeposit[receiver] + delay) {revert XpandrErrors.UnderTimeLock();}}
+        if(lastUserDeposit[receiver] != 0) {if(_timestamp() < lastUserDeposit[receiver] + delay) {revert XpandrErrors.UnderTimeLock();}}
         shares = convertToShares(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
         if(assets > asset.balanceOf(owner)){revert XpandrErrors.OverCap();}
 
-        lastUserDeposit[receiver] = uint64(block.timestamp);
+        lastUserDeposit[receiver] = _timestamp();
         emit Deposit(receiver, receiver, assets, shares);
 
         asset.safeTransferFrom(receiver, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
@@ -173,12 +174,12 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
-        if(uint64(block.timestamp) < lastHarvest + delay){revert XpandrErrors.UnderTimeLock();}
+        if(_timestamp() < lastHarvest + delay){revert XpandrErrors.UnderTimeLock();}
         _harvest(msg.sender);
     }
 
     function _harvest(address caller) internal whenNotPaused {
-        lastHarvest = uint64(block.timestamp);
+        lastHarvest = uint64(IEqualizerPair(address(asset)).getReserves()[2]);
         emit Harvest(caller);
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
         uint outputBal = ERC20(equal).balanceOf(address(this));
@@ -215,7 +216,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
         vaultProfit = vaultProfit + uint64(usdProfit / 1e12);
 
-        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), uint64(block.timestamp + 30));
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), lastHarvest);
 
         uint feeBal = ERC20(feeToken).balanceOf(address(this));
 
@@ -236,17 +237,16 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     function _addLiquidity() internal {
         uint equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
-        (uint ftmOut,) = IEqualizerRouter(router).getAmountOut(equalHalf, equal, wftm);
-        (uint mpxOut,) = IEqualizerRouter(router).getAmountOut(equalHalf, equal, mpx);
-        uint minFtmOut = ftmOut - (ftmOut * 2 / 100);
-        uint minMpxOut = mpxOut - (mpxOut * 2 / 100);
-
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minFtmOut , equalToWftmPath, address(this), uint64(block.timestamp + 30));
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minMpxOut, equalToMpxPath, address(this), uint64(block.timestamp + 30));
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 1, equalToWftmPath, address(this), lastHarvest);
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 1, equalToMpxPath, address(this), lastHarvest);
 
         uint t1Bal = ERC20(wftm).balanceOf(address(this));
         uint t2Bal = ERC20(mpx).balanceOf(address(this));
-        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), uint64(block.timestamp + 30));
+        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), lastHarvest);
+    }
+
+    function _timestamp() internal view returns (uint64){
+        return uint64(IEqualizerPair(address(asset)).getReserves()[2]);
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: No License (None)
-// No permissions granted before Sunday, 5th May 2024, then GPL-3.0 after this date.
+// No permissions granted before Sunday, 5th May 2025, then GPL-3.0 after this date.
 
 /** 
-
 @title  - XpandrUnityVault
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
@@ -57,9 +56,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     address public constant equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
     address public constant mpx = address(0x66eEd5FF1701E6ed8470DC391F05e27B1d0657eb);
     address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit denominator
-    address public feeToken;      // Switch for which token protocol receives fees in. In mind for Native & Stable but fits any Equal - X token swap. Streamlines POL portfolio.
+    address public feeToken;      // Switch for which token protocol receives fees in. In mind for Native & Stable but fits any Equal - X token swap.
     address[] public rewardTokens;
-    address[3] internal slippageTokens;
+    address[2] internal slippageTokens;
+    address[2] internal slippageLPs;
 
     // 3rd party contracts
     address public gauge;
@@ -120,7 +120,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
             equalToMpxPath.push(_equalToMpxPath[i]);
             unchecked{++i;}
         }
-        slippageTokens = [equal, wftm, mpx];
+        slippageTokens = [equal, wftm];
+        slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(asset)];
         rewardTokens.push(equal);
         lastHarvest = _timestamp();
         _addAllowance();
@@ -171,8 +172,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         if (assetBal > assets) {assetBal = assets;}
 
         if(withdrawFee != 0){
-            uint withdrawFeeAmount = assetBal * withdrawFee / FEE_DIVISOR;
-            asset.safeTransfer(receiver, assetBal - withdrawFeeAmount);
+            uint withdrawFeeAmt = assetBal * withdrawFee / FEE_DIVISOR;
+            asset.safeTransfer(receiver, assetBal - withdrawFeeAmt);
         } else {asset.safeTransfer(receiver, assetBal);}
     }
 
@@ -327,7 +328,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     //Guards against sandwich attacks
     function slippage(uint _amount) internal view returns(uint minAmt1, uint minAmt2){
-        uint[] memory t1Amts = IEqualizerPair(address(asset)).sample(slippageTokens[0], _amount, 5, 2);
+        uint[] memory t1Amts = IEqualizerPair(slippageLPs[0]).sample(slippageTokens[0], _amount, 5, 2);
     
         for(uint i; i < t1Amts.length;){
             minAmt1 = minAmt1 + t1Amts[i];
@@ -335,7 +336,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         }
         minAmt1 = (minAmt1 / 10);
 
-        uint[] memory t2Amts = IEqualizerPair(address(asset)).sample(slippageTokens[1], minAmt1, 5, 2);
+        uint[] memory t2Amts = IEqualizerPair(slippageLPs[1]).sample(slippageTokens[1], minAmt1, 5, 2);
         minAmt1 = (minAmt1 - minAmt1 * 2) / 100;
 
         for(uint i; i < t2Amts.length;){

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: No License (None)
-// No permissions granted before Sunday, 5th May 2024, then GPL-3.0 after this date.
+// No permissions granted before Sunday, 5th May 2025, then GPL-3.0 after this date.
 
 /** 
-
 @title  - XpandrUnityVault2
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
@@ -20,6 +19,8 @@ https://eips.ethereum.org/EIPS/eip-4626
 Using solmate's gas optimized libs
 https://github.com/transmissions11/solmate
 
+Special thanks to 543 from Equalizer/Guru_Network for the brainstorming & QA
+
 @notice - AccessControl = modified solmate Owned.sol w/ added Strategist + error codes.
         - Pauser = modified OZ Pausable.sol using uint8 instead of bool + error codes.
 **/
@@ -31,6 +32,7 @@ import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
 import {AccessControl} from "./interfaces/AccessControl.sol";
 import {Pauser} from "./interfaces/Pauser.sol";
 import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
+import {IEqualizerPair} from "./interfaces/IEqualizerPair.sol";
 import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
 import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 
@@ -56,8 +58,10 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     address public constant equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
     address public constant mpx = address(0x66eEd5FF1701E6ed8470DC391F05e27B1d0657eb);
     address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit denominator
-    address public feeToken;         //Switch for which token protocol receives fees in. In mind for Native & Stable. Streamlines POL portfolio.
+    address public feeToken;         //Switch for which token protocol receives fees in. In mind for Native & Stable but fits any Equal - X token swap.
     address[] public rewardTokens;
+    address[2] internal slippageTokens;
+    address[2] internal slippageLPs;
 
     // 3rd party contracts
     address public gauge;
@@ -80,7 +84,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
     // Controllers
     uint64 public delay;
-    uint64 public vaultProfit;                              // Excludes performance fees 
+    uint64 public vaultProfit;                               // Excludes performance fees 
     uint64 internal lastHarvest;                             // Safeguard only allows harvest being called if > delay
     uint8 internal harvestOnDeposit;                           
     mapping(address => uint64) internal lastUserDeposit;     //Safeguard only allows same user deposits if > delay
@@ -117,9 +121,10 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
             equalToMpxPath.push(_equalToMpxPath[i]);
             unchecked{++i;}
         }
-
+        slippageTokens = [equal, wftm];
+        slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(asset)];
         rewardTokens.push(equal);
-        lastHarvest = uint64(block.timestamp);
+        lastHarvest = _timestamp();
         _addAllowance();
     }
 
@@ -134,12 +139,12 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
     function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
-        if(lastUserDeposit[receiver] != 0) {if(uint64(block.timestamp) < lastUserDeposit[receiver] + delay) {revert XpandrErrors.UnderTimeLock();}}
+        if(lastUserDeposit[receiver] != 0) {if(_timestamp() < lastUserDeposit[receiver] + delay) {revert XpandrErrors.UnderTimeLock();}}
         if(assets > asset.balanceOf(receiver)){revert XpandrErrors.OverCap();}
         shares = convertToShares(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
 
-        lastUserDeposit[receiver] = uint64(block.timestamp);
+        lastUserDeposit[receiver] = _timestamp();
         emit Deposit(receiver, receiver, assets, shares);
 
         asset.safeTransferFrom(receiver, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
@@ -150,7 +155,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     }
 
     function withdrawAll() external {
-        withdraw(asset.balanceOf(msg.sender), msg.sender, msg.sender);
+        withdraw(ERC20(address(this)).balanceOf(msg.sender), msg.sender, msg.sender);
     }
 
     // Withdraw 'asset' from farm into vault & sends to receiver.
@@ -168,20 +173,20 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         if (assetBal > assets) {assetBal = assets;}
 
         if(withdrawFee != 0){
-            uint withdrawFeeAmount = assetBal * withdrawFee / FEE_DIVISOR; 
-            asset.safeTransfer(receiver, assetBal - withdrawFeeAmount);
+            uint withdrawFeeAmt = assetBal * withdrawFee / FEE_DIVISOR;
+            asset.safeTransfer(receiver, assetBal - withdrawFeeAmt);
         } else {asset.safeTransfer(receiver, assetBal);}
 
     }
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
-        if(uint64(block.timestamp) < lastHarvest + delay){revert XpandrErrors.UnderTimeLock();}
+        if(_timestamp() < lastHarvest + delay){revert XpandrErrors.UnderTimeLock();}
         _harvest(msg.sender);
     }
 
     function _harvest(address caller) internal whenNotPaused {
-        lastHarvest = uint64(block.timestamp);
+        lastHarvest = uint64(IEqualizerPair(address(asset)).getReserves()[2]);
         emit Harvest(caller);
 
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
@@ -219,7 +224,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
         vaultProfit = vaultProfit + uint64(usdProfit / 1e12);
 
-        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), uint64(block.timestamp + 30));
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), lastHarvest);
 
         uint feeBal = ERC20(feeToken).balanceOf(address(this));
 
@@ -232,17 +237,13 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
     function _addLiquidity() internal {
         uint equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
-        (uint ftmOut,) = IEqualizerRouter(router).getAmountOut(equalHalf, equal, wftm);
-        (uint mpxOut,) = IEqualizerRouter(router).getAmountOut(equalHalf, equal, mpx);
-        uint minFtmOut = ftmOut - (ftmOut * 2 / 100);
-        uint minMpxOut = mpxOut - (mpxOut * 2 / 100);
-
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minFtmOut, equalToWftmPath, address(this), uint64(block.timestamp + 30));
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minMpxOut, equalToMpxPath, address(this), uint64(block.timestamp + 30));
+        (uint minAmt1, uint minAmt2) = slippage(equalHalf);
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt1, equalToWftmPath, address(this), lastHarvest);
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt2, equalToMpxPath, address(this), lastHarvest);
 
         uint t1Bal = ERC20(wftm).balanceOf(address(this));
         uint t2Bal = ERC20(mpx).balanceOf(address(this));
-        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), uint64(block.timestamp + 30));
+        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), lastHarvest);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -314,6 +315,31 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         _unpause();
         _addAllowance();
         _earn();
+    }
+
+    //Guards against timestamp spoofing
+    function _timestamp() internal view returns (uint64){
+        return uint64(IEqualizerPair(address(asset)).getReserves()[2]);
+    }
+
+    //Guards against sandwich attacks
+    function slippage(uint _amount) internal view returns(uint minAmt1, uint minAmt2){
+        uint[] memory t1Amts = IEqualizerPair(slippageLPs[0]).sample(slippageTokens[0], _amount, 5, 2);
+    
+        for(uint i; i < t1Amts.length;){
+            minAmt1 = minAmt1 + t1Amts[i];
+            unchecked{++i;}
+        }
+        minAmt1 = (minAmt1 / 10);
+
+        uint[] memory t2Amts = IEqualizerPair(slippageLPs[1]).sample(slippageTokens[1], minAmt1, 5, 2);
+        minAmt1 = (minAmt1 - minAmt1 * 2) / 100;
+
+        for(uint i; i < t2Amts.length;){
+            minAmt2 = minAmt2 + t2Amts[i];
+            unchecked{++i;}
+        }
+        minAmt2 = (minAmt2 / 10) - ((minAmt2 / 10) * 2 ) / 100;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -392,12 +418,11 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
             customPath.push(_path[i]);
             unchecked{++i;}
         }
-        
+
+        emit CustomTx(_token, bal);
         ERC20(_token).safeApprove(router, 0);
         ERC20(_token).safeApprove(router, type(uint).max);
-        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, customPath, address(this), uint64(block.timestamp + 30));
-   
-        emit CustomTx(_token, bal);
+        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, customPath, address(this), uint64(block.timestamp));   
     }
 
     function _subAllowance() internal {
@@ -414,7 +439,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         ERC20(mpx).safeApprove(router, type(uint).max);
     }
 
-    //ERC4626 hook. Called by deposit if harvestOnDeposit = 1. Args unused but part of 4626 spec
+    //ERC4626 hook. Called by deposit if harvestOnDeposit != 0. Args unused but part of 4626 spec
     function afterDeposit(uint assets, uint shares) internal override {
         _harvest(tx.origin);
     }

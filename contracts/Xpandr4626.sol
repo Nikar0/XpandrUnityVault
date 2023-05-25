@@ -16,6 +16,8 @@ https://eips.ethereum.org/EIPS/eip-4626
 Using solmate's gas optimized libs
 https://github.com/transmissions11/solmate
 
+Special thanks to 543 from Equalizer/Guru_Network for the brainstorming & QA
+
 @notice - AccessControl = modified solmate Owned.sol w/ added Strategist + error codes.
 **/
 

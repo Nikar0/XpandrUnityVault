@@ -131,18 +131,17 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
     function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
-        if(lastUserDeposit[msg.sender] != 0) {if(uint64(block.timestamp) < lastUserDeposit[msg.sender] + delay) {revert XpandrErrors.UnderTimeLock();}}
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
-
+        if(lastUserDeposit[receiver] != 0) {if(uint64(block.timestamp) < lastUserDeposit[receiver] + delay) {revert XpandrErrors.UnderTimeLock();}}
         shares = convertToShares(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
         if(assets > asset.balanceOf(owner)){revert XpandrErrors.OverCap();}
 
-        lastUserDeposit[msg.sender] = uint64(block.timestamp);
-        emit Deposit(msg.sender, receiver, assets, shares);
+        lastUserDeposit[receiver] = uint64(block.timestamp);
+        emit Deposit(receiver, receiver, assets, shares);
 
-        asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
-        _mint(msg.sender, shares);
+        asset.safeTransferFrom(receiver, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
+        _mint(receiver, shares);
         _earn();
 
         if(harvestOnDeposit != 0) {afterDeposit(assets, shares);}
@@ -160,7 +159,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
        
         _burn(_owner, shares);
-        emit Withdraw(msg.sender, receiver, _owner, assets, shares);
+        emit Withdraw(_owner, receiver, _owner, assets, shares);
         _collect(assets);
 
         uint assetBal = asset.balanceOf(address(this));
@@ -175,9 +174,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
-        if(harvestOnDeposit != 1){
         if(uint64(block.timestamp) < lastHarvest + delay){revert XpandrErrors.UnderTimeLock();}
-        }
         _harvest(msg.sender);
     }
 

@@ -39,7 +39,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
                           VARIABLES & EVENTS
     //////////////////////////////////////////////////////////////*/
     
-    event Harvest(address indexed harvester, uint64 timestamp);
+    event Harvest(address indexed harvester);
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
     event SetFeeToken(address indexed newFeeToken);
     event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
@@ -71,19 +71,19 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     // Fee Structure
     uint64 public constant FEE_DIVISOR = 1000;               
-    uint64 public platformFee = 35;                        // 3.5% Platform fee cap
-    uint64 public withdrawFee;                             // 0% withdraw fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0 or 0.1%
+    uint64 public platformFee = 35;                         // 3.5% Platform fee cap
+    uint64 public withdrawFee;                              // 0% withdraw fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0 or 0.1%
     uint64 public treasuryFee = 590;
     uint64 public callFee = 120;
     uint64 public stratFee = 290;  
     uint64 public recipientFee;
 
     // Controllers
-    uint64 internal lastHarvest;                             // Safeguard only allows harvest being called if > delay
-    uint128 public vaultProfit;                              // Excludes performance fees
-    uint128 public delay;
+    uint64 internal lastHarvest;                            // Safeguard only allows harvest being called if > delay
+    uint64 public vaultProfit;                              // Excludes performance fees
+    uint64 public delay;
     uint8 internal harvestOnDeposit;                                    
-    mapping(address => uint64) internal lastUserDeposit;     //Safeguard only allows same user deposits if > delay
+    mapping(address => uint64) internal lastUserDeposit;    //Safeguard only allows same user deposits if > delay
 
     constructor(
         ERC20 _asset,
@@ -172,14 +172,14 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
         if(harvestOnDeposit != 1){
-        if(uint64(block.timestamp) < lastHarvest + uint64(delay)){revert XpandrErrors.UnderTimeLock();}
+        if(uint64(block.timestamp) < lastHarvest + delay){revert XpandrErrors.UnderTimeLock();}
         }
         _harvest(msg.sender);
     }
 
     function _harvest(address caller) internal whenNotPaused {
         lastHarvest = uint64(block.timestamp);
-        emit Harvest(caller, lastHarvest);
+        emit Harvest(caller);
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
         uint outputBal = ERC20(equal).balanceOf(address(this));
 
@@ -213,7 +213,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         uint toProfit = ERC20(equal).balanceOf(address(this)) - toFee;
 
         (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
-        vaultProfit = vaultProfit + uint128(usdProfit / 1e12);
+        vaultProfit = vaultProfit + uint64(usdProfit / 1e12);
 
         IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), uint64(block.timestamp + 30));
 
@@ -337,7 +337,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         treasuryFee = _treasuryFee;
         recipientFee = _recipientFee;
         emit SetFeesAndRecipient(withdrawFee, sum, feeRecipient);
-
     }
 
     function setRouterOrGauge(address _router, address _gauge) external onlyOwner {
@@ -375,7 +374,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         harvestOnDeposit = _harvestOnDeposit;
     } 
 
-    function setDelay(uint128 _delay) external onlyAdmin{
+    function setDelay(uint64 _delay) external onlyAdmin{
         if(_delay > 1800 || _delay < 600) {revert XpandrErrors.InvalidDelay();}
         delay = _delay;
     }

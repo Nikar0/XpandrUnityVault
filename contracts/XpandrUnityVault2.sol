@@ -48,7 +48,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
     event SetFeeToken(address indexed newFeeToken);
     event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
-    event SetFeesAndRecipient(uint64 indexed withdrawFee, uint64 indexed totalFees, address indexed newRecipient);
+    event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
     event SetDelay(uint64 delay);
     event Panic(address indexed caller);
     event CustomTx(address indexed from, uint indexed amount);
@@ -316,7 +316,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         _subAllowance();
     }
 
-    function unpause() external onlyAdmin {
+    function unpause() external whenPaused onlyAdmin {
         _unpause();
         _addAllowance();
         _earn();

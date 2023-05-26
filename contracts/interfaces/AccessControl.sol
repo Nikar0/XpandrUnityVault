@@ -62,7 +62,7 @@ abstract contract AccessControl {
     }
 
     function checkAdmin() internal virtual {
-        if(tx.origin != owner || tx.origin != strategist){revert NoAuth();}
+        if(tx.origin != owner && tx.origin != strategist){revert NoAuth();}
     }
 
 }

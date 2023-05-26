@@ -71,7 +71,6 @@ contract Xpandr4626 is ERC4626, AccessControl, ReentrancyGuard {
         )
     {
         strategy = _strategy;
-        totalSupply = type(uint).max;
     }
 
     /*//////////////////////////////////////////////////////////////

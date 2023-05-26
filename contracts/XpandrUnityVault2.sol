@@ -186,7 +186,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     }
 
     function _harvest(address caller) internal whenNotPaused {
-        lastHarvest = uint64(IEqualizerPair(address(asset)).getReserves()[2]);
+        lastHarvest = _timestamp();
         emit Harvest(caller);
 
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
@@ -200,7 +200,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     }
 
     /*//////////////////////////////////////////////////////////////
-                          INTERNAL HELPERS
+                              INTERNAL
     //////////////////////////////////////////////////////////////*/
 
     // Deposits funds in the farm
@@ -296,7 +296,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
 
     /*//////////////////////////////////////////////////////////////
-                            VAULT SECURITY
+                              SECURITY
     //////////////////////////////////////////////////////////////*/
 
     // Pauses the vault & executes emergency withdraw
@@ -318,8 +318,9 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     }
 
     //Guards against timestamp spoofing
-    function _timestamp() internal view returns (uint64){
-        return uint64(IEqualizerPair(address(asset)).getReserves()[2]);
+    function _timestamp() internal view returns (uint64 timestamp){
+        (,,uint lastBlock) = (IEqualizerPair(address(asset)).getReserves());
+        timestamp = uint64(lastBlock);
     }
 
     //Guards against sandwich attacks

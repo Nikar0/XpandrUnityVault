@@ -1,0 +1,109 @@
+//SPDX-License-Identifier: MIT
+
+import {IERC20} from "node_modules/@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ERC20} from "node_modules/@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
+import {IEqualizerPair} from "./interfaces/IEqualizerPair.sol";
+import {AccessControl} from "./interfaces/AccessControl.sol";
+import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
+
+pragma solidity ^0.8.19;
+
+contract XpandrRecipientFTM is ERC20, AccessControl {
+    using IERC20 for ERC20;
+
+    event UpdateFees(uint64 newTreasuryFee, uint64 newStrategistFee, uint64 newBbFee);
+    event Distro(uint treasuryAmt, uint stratAmt, uint bbAmt);
+    event Buyback(uint bbAmt);
+    event SetTreasury(address indexed newTreasury);
+
+    address internal native = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
+    address internal stableToken;
+    address public protocolToken;
+    address public router;
+    address internal lp;
+    address[] internal rewardTokens;
+
+    uint64 internal constant FEE_DIVISOR = 1000;
+    uint64 internal treasuryFee = 700;
+    uint64 internal stratFee = 300;
+    uint64 internal bbFee;
+
+
+    constructor(
+        address _native,
+        address _stableToken,
+        address _router
+    )
+    {
+        strategist = _strategist;
+        stableToken = _stableToken;
+    }
+
+    function distro() external onlyAdmin{
+        if(bbFee != 0){buyback();}
+        uint ftmBal = IERC20(native).balanceOf(address(this));
+
+        uint stratAmt = ftmBal * stratFee / FEE_DIVISOR;
+        IERC20(native).transfer(strategist, stratAmt);
+
+        uint treasuryAmt = ftmBal * treasuryFee / FEE_DIVISOR;
+        IERC20(native).transfer(treasury, treasuryAmt);
+    }
+
+    function buyback() public onlyAdmin{
+        uint ftmBal = IERC20(native).balanceOf(address(this));
+        uint bbAmt = ftmBal * bbFee / FEE_DIVISOR;
+
+        IEqualizerRouter(router).swapExactTokensForTokens(bbAmt, 1, bbPathSolidly, address(this), _timestamp);
+    }
+
+    function setFees(uint64 _treasuryFee, uint64 _stratFee, uint64 _bbFee) external onlyAdmin {
+        uint64 sum = _treasuryFee + _stratFee + _bbFee;
+        if(sum > FEE_DIVISOR) {revert XpandrErrors.OverCap();}
+
+        treasuryFee = _treasuryFee;
+        stratFee = _stratFee;
+        bbFee = _bbFee;
+        emit UpdateFees(treasuryFee, stratFee, bbFee);
+    }
+
+    function setTreasury(address _treasury) external onlyOwner{
+        if(_treasury == address(0) || _treasury == treasury){revert XpandrErrors.InvalidProposal();}
+        treasury = _treasury;
+        emit SetTreasury(treasury);
+    }
+
+    function setStableToken(address _token) external onlyOwner{
+        if(_token == address(0) || _token == stableToken){revert XpandrErrors.InvalidProposal();}
+        stableToken = _token;
+    }
+
+    function setLP(address _lp) external onlyAdmin {
+        if(_lp == address(0) || _lp == lp){revert XpandrErrors.InvalidTokenOrPath();}
+        lp = _lp;
+    }
+
+    function _timestamp() internal view returns (uint64 timestamp){
+        (,,uint lastBlock) = (IEqualizerPair(address(lp)).getReserves());
+        timestamp = uint64(lastBlock + 600);
+    }
+
+    function exitToTreasury() external onlyOwner{
+        uint ftmBal = IERC20(native).balanceOf(address(this));
+        uint stableBal = IERC20(stableToken).balanceOf(address(this));
+
+        IERC20(native).transfer(treasury, ftmBal);
+        IERC20(stableToken).transfer(treasury, ftmBal);
+        
+        uint[] rewardAmts = new uint[];
+        
+        for(uint i; i < rewardTokens.length;){
+            uint float = IERC20(rewardTokens[i]).balanceOf(address(this));
+            rewardAmts[i] = float;
+        }
+        
+
+    }
+
+}

@@ -22,6 +22,7 @@ import {Pauser} from "./interfaces/Pauser.sol";
 import {ERC20} from "./interfaces/solmate/ERC20.sol";
 import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
 import {AccessControl} from "./interfaces/AccessControl.sol";
+import {IEqualizerPair} from "./interfaces/IEqualizerPair.sol";
 import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
 import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
@@ -38,8 +39,9 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     event SetRouterOrGauge(address indexed router, address indexed gauge);
     event SetFeeToken(address indexed newFeeToken);
     event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
-    event SetFeesAndRecipient(uint64 indexed withdrawFee, uint64 indexed totalFees, address indexed newRecipient);
-    event RetireStrat(address indexed caller);
+    event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
+    event RemoveStrat(address indexed caller);
+    event SetDelay(uint64 delay);
     event Panic(address indexed caller);
     event CustomTx(address indexed from, uint indexed amount);
 
@@ -49,8 +51,10 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     address public constant mpx = address(0x66eEd5FF1701E6ed8470DC391F05e27B1d0657eb);
     address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit denominator
     address public asset;
-    address public feeToken;
+    address internal feeToken;
     address[] public rewardTokens;
+    address[2] internal slippageTokens;
+    address[2] internal slippageLPs;
 
     // Third party contracts
     address public gauge;
@@ -67,19 +71,18 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     IEqualizerRouter.Routes[] public customPath;
 
     // Fee Structure
-    uint64 public constant FEE_DIVISOR = 500;
-    uint64 public PLATFORM_FEE = 35;                         // 3.5% Platform fee max cap
-    uint64 public WITHDRAW_FEE = 0;                         // 0% withdraw fee. Kept in case of economic attacks, can only be set to 0 or 0.1%
-    uint64 public TREASURY_FEE = 590;
-    uint64 public CALL_FEE = 120;
-    uint64 public STRAT_FEE = 290;  
-    uint64 public RECIPIENT_FEE;
+    uint64 public constant FEE_DIVISOR = 1000;
+    uint64 public platformFee = 35;                         // 3.5% Platform fee max cap
+    uint64 public withdrawFee;                             // 0% withdraw fee. Kept in case of economic attacks, can only be set to 0 or 0.1%
+    uint64 public treasuryFee = 590;
+    uint64 public callFee = 120;
+    uint64 public stratFee = 290;  
+    uint64 public recipientFee;
 
     // Controllers
     uint64 internal lastHarvest;
-    uint128 public harvestProfit;
-    uint128 internal delay;
-    bool public constant stable = false;
+    uint64 internal harvestProfit;
+    uint64 internal delay;
     uint8 public harvestOnDeposit;
 
 
@@ -88,6 +91,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         address _gauge,
         address _router,
         address _feeToken,
+        address _strategist,
         IEqualizerRouter.Routes[] memory _equalToWftmPath,
         IEqualizerRouter.Routes[] memory _equalToMpxPath
     ) {
@@ -95,6 +99,8 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         gauge = _gauge;
         router = _router;
         feeToken = _feeToken;
+        strategist = _strategist;
+        emit SetStrategist(address(0), _strategist);
 
         for (uint i; i < _equalToWftmPath.length; ++i) {
             equalToWftmPath.push(_equalToWftmPath[i]);
@@ -103,10 +109,11 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         for (uint i; i < _equalToMpxPath.length; ++i) {
             equalToMpxPath.push(_equalToMpxPath[i]);
         }
-
+        slippageTokens = [equal, wftm];
+        slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(_asset)];
         rewardTokens.push(equal);
-        harvestOnDeposit = 0;
         lastHarvest = uint64(block.timestamp);
+        delay = 600; // 10 mins
         _addAllowance();
     }
 
@@ -114,20 +121,17 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
                           DEPOSIT/WITHDRAW
     //////////////////////////////////////////////////////////////*/
 
+
+
     function deposit() public whenNotPaused {
         if(msg.sender != vault){revert XpandrErrors.NotVault();}
         harvestProfit = 0;
-        _deposit();
-    }
-
-    function _deposit() internal whenNotPaused {
         uint assetBal = ERC20(asset).balanceOf(address(this));
         IEqualizerGauge(gauge).deposit(assetBal);
     }
 
     function withdraw(uint _amount) external {
         if(msg.sender != vault){revert XpandrErrors.NotVault();}
-
         uint assetBal = ERC20(asset).balanceOf(address(this));
 
         if (assetBal < _amount) {
@@ -138,15 +142,15 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         if (assetBal > _amount) {
             assetBal = _amount;
         }
-        if(WITHDRAW_FEE != 0){
-            uint withdrawalFeeAmount = assetBal * WITHDRAW_FEE >> FEE_DIVISOR; 
+        if(withdrawFee != 0){
+            uint withdrawalFeeAmount = assetBal * withdrawFee / FEE_DIVISOR; 
             ERC20(asset).safeTransfer(vault, assetBal - withdrawalFeeAmount);
         } else {ERC20(asset).safeTransfer(vault, assetBal);}
     }
 
     function harvest() external {
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
-        if(lastHarvest < uint64(block.timestamp + delay)){revert XpandrErrors.UnderTimeLock();}
+        if(_timestamp() < lastHarvest + delay){revert XpandrErrors.UnderTimeLock();}
         _harvest(msg.sender);
     }
 
@@ -154,21 +158,20 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         if (caller != vault){
             if(caller != tx.origin){revert XpandrErrors.NotEOA();}
         }
+        emit Harvest(caller);
 
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
         uint rewardBal = ERC20(equal).balanceOf(address(this));
 
-        uint toProfit = rewardBal - (rewardBal * PLATFORM_FEE >> FEE_DIVISOR);
+        uint toProfit = rewardBal - (rewardBal * platformFee / FEE_DIVISOR);
         (uint profitBal,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
-        harvestProfit = harvestProfit + uint128(profitBal * 1e18);
+        harvestProfit = harvestProfit + uint64(profitBal * 1e6 / 1e12);
 
         if (rewardBal != 0 ) {
             _chargeFees(caller);
             _addLiquidity();
         }
-        _deposit();
-
-        emit Harvest(caller);
+        deposit();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -176,36 +179,36 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
 
     function _chargeFees(address caller) internal {                   
-        uint toFee = ERC20(equal).balanceOf(address(this)) * PLATFORM_FEE >> FEE_DIVISOR;
-        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, stable, address(this), uint64(block.timestamp));
+        uint toFee = ERC20(equal).balanceOf(address(this)) * platformFee / FEE_DIVISOR;
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), lastHarvest);
     
         uint feeBal = ERC20(feeToken).balanceOf(address(this));
 
-        uint callFee = feeBal * CALL_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).transfer(caller, callFee);
+        uint callAmt = feeBal * callFee / FEE_DIVISOR;
+        ERC20(feeToken).transfer(caller, callAmt);
 
-        if(RECIPIENT_FEE != 0){
-        uint recipientFee = feeBal * RECIPIENT_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(feeRecipient, recipientFee);
+        if(recipientFee != 0){
+        uint recipientAmt = feeBal * recipientFee / FEE_DIVISOR;
+        ERC20(feeToken).safeTransfer(feeRecipient, recipientAmt);
         }
 
-        uint treasuryFee = feeBal * TREASURY_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).transfer(treasury, treasuryFee);
+        uint treasuryAmt = feeBal * treasuryFee / FEE_DIVISOR;
+        ERC20(feeToken).transfer(treasury, treasuryAmt);
                                                 
-        uint stratFee = feeBal * STRAT_FEE >> FEE_DIVISOR;
-        ERC20(feeToken).transfer(strategist, stratFee);
+        uint stratAmt = feeBal * stratFee / FEE_DIVISOR;
+        ERC20(feeToken).transfer(strategist, stratAmt);
     }
 
     function _addLiquidity() internal {
         uint equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
-
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToWftmPath, address(this), uint64(block.timestamp));
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, 0, equalToMpxPath, address(this), uint64(block.timestamp));
+        (uint minAmt1, uint minAmt2) = slippage(equalHalf);
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt1, equalToWftmPath, address(this), lastHarvest);
+        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt2, equalToMpxPath, address(this), lastHarvest);
 
         uint t1Bal = ERC20(wftm).balanceOf(address(this));
         uint t2Bal = ERC20(mpx).balanceOf(address(this));
 
-        IEqualizerRouter(router).addLiquidity(wftm, mpx, stable, t1Bal, t2Bal, 1, 1, address(this), uint64(block.timestamp));
+        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), lastHarvest);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -219,7 +222,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         if (outputBal != 0) {
             (wrappedOut,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
         } 
-        return wrappedOut * PLATFORM_FEE >> FEE_DIVISOR * CALL_FEE >> FEE_DIVISOR;
+        return wrappedOut * platformFee / FEE_DIVISOR * callFee / FEE_DIVISOR;
     }
 
     //Returns rewards unharvested
@@ -228,12 +231,12 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     }
 
     //Return the total underlying 'asset' held by the strat */
-    function balanceOf() public view returns (uint) {
-        return balanceOfWant() + (balanceOfPool());
+    function balanceOf() external view returns (uint) {
+        return balanceOfAsset() + (balanceOfPool());
     }
 
     //Return 'asset' balance this contract holds
-    function balanceOfWant() public view returns (uint) {
+    function balanceOfAsset() public view returns (uint) {
         return ERC20(asset).balanceOf(address(this));
     }
 
@@ -242,25 +245,33 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         return IEqualizerGauge(gauge).balanceOf(address(this));
     }
 
+    function harvestProfits() external view returns (uint64){
+        return harvestProfit;
+    }
+
+    function getDelay() external view returns(uint64){
+        return delay;
+    }
+
     /*//////////////////////////////////////////////////////////////
-                        STRAT SECURITY & UPGRADE 
+                        SECURITY & UPGRADE 
     //////////////////////////////////////////////////////////////*/
 
     //Called as part of strat migration. Sends all available funds back to the vault
-    function retireStrat() external {
+    function removeStrat() external {
         if(msg.sender != vault){revert XpandrErrors.NotVault();}
         _harvest(msg.sender);
         IEqualizerGauge(gauge).withdraw(balanceOfPool());
-        ERC20(asset).transfer(vault, balanceOfWant());
+        ERC20(asset).transfer(vault, balanceOfAsset());
 
-        emit RetireStrat(msg.sender);
+        emit RemoveStrat(msg.sender);
     }
 
     //Pauses the strategy contract & executes emergency withdraw
     function panic() external onlyAdmin {
         pause();
-        IEqualizerGauge(gauge).withdraw(balanceOfPool());
         emit Panic(msg.sender);
+        IEqualizerGauge(gauge).withdraw(balanceOfPool());
     }
 
     function pause() public onlyAdmin {
@@ -268,10 +279,28 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         _subAllowance();
     }
 
-    function unpause() external onlyAdmin {
+    function unpause() external whenPaused onlyAdmin {
         _unpause();
         _addAllowance();
-        _deposit();
+        deposit();
+    }
+
+    //Guards against timestamp spoofing
+    function _timestamp() internal view returns (uint64 timestamp){
+        (,,uint lastBlock) = (IEqualizerPair(address(asset)).getReserves());
+        timestamp = uint64(lastBlock + 600);
+    }
+
+    //Guards against sandwich attacks
+    function slippage(uint _amount) internal view returns(uint minAmt1, uint minAmt2){
+        uint[] memory t1Amts = IEqualizerPair(slippageLPs[0]).sample(slippageTokens[0], _amount, 3, 2);
+        minAmt1 = (t1Amts[0] + t1Amts[1] + t1Amts[2]) / 3;
+
+        uint[] memory t2Amts = IEqualizerPair(slippageLPs[1]).sample(slippageTokens[1], minAmt1, 3, 2);
+        minAmt1 = minAmt1 - (minAmt1 *  2 / 100);
+
+        minAmt2 = (t2Amts[0] + t2Amts[1] + t2Amts[2]) / 3;
+        minAmt2 = minAmt2 - (minAmt2 * 2 / 100);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -282,16 +311,15 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         if(_platformFee > 35){revert XpandrErrors.OverCap();}
         if(_withdrawFee != 0 || _withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
-        //FeeDivisor is halved for divisions with >> 500 instead of / 1000. As such, using correct value for condition check here.
-        if(sum > uint16(1000)){revert XpandrErrors.OverCap();}
+        if(sum > FEE_DIVISOR){revert XpandrErrors.OverCap();}
         if(feeRecipient != address(0) && feeRecipient != _recipient){feeRecipient = _recipient;}
 
-        PLATFORM_FEE = _platformFee;
-        CALL_FEE = _callFee;
-        STRAT_FEE = _stratFee;
-        WITHDRAW_FEE = _withdrawFee;
-        TREASURY_FEE = _treasuryFee;
-        RECIPIENT_FEE = _recipientFee;
+        platformFee = _platformFee;
+        callFee = _callFee;
+        stratFee = _stratFee;
+        withdrawFee = _withdrawFee;
+        treasuryFee = _treasuryFee;
+        recipientFee = _recipientFee;
 
         emit SetFeesAndRecipient(_withdrawFee, sum, feeRecipient);
     }
@@ -323,23 +351,21 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         emit SetPaths(equalToMpxPath, equalToWftmPath);
     }
 
-
-   function setFeeToken(address _feeToken) external onlyAdmin {
+    function setFeeToken(address _feeToken) external onlyAdmin {
        if(_feeToken == address(0) || _feeToken == feeToken){revert XpandrErrors.InvalidTokenOrPath();}
        feeToken = _feeToken;
-   
+       emit SetFeeToken(_feeToken);
+
        ERC20(_feeToken).safeApprove(router, 0);
        ERC20(_feeToken).safeApprove(router, type(uint).max);
-       emit SetFeeToken(_feeToken);
     }
 
-    
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
         if(_harvestOnDeposit != 0 || _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
     } 
 
-    function setDelay(uint128 _delay) external onlyAdmin{
+    function setDelay(uint64 _delay) external onlyAdmin{
         if(_delay > 1800 || _delay < 600) {revert XpandrErrors.InvalidDelay();}
         delay = _delay;
     }
@@ -362,9 +388,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
 
         ERC20(_token).safeApprove(router, 0);
         ERC20(_token).safeApprove(router, type(uint).max);
-        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 0, customPath, address(this), uint64(block.timestamp));
-   
-        emit CustomTx(_token, bal);
+        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, customPath, address(this), _timestamp());   
     }
 
     function _subAllowance() internal {

@@ -12,5 +12,4 @@ contract XpandrErrors {
     error InvalidDelay();
     error InvalidProposal();
     error InvalidTokenOrPath();
-    error UnusedFunction();
 }

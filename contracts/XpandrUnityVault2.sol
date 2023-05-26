@@ -48,9 +48,10 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
     event SetFeeToken(address indexed newFeeToken);
     event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
+    event SetFeesAndRecipient(uint64 indexed withdrawFee, uint64 indexed totalFees, address indexed newRecipient);
+    event SetDelay(uint64 delay);
     event Panic(address indexed caller);
     event CustomTx(address indexed from, uint indexed amount);
-    event SetFeesAndRecipient(uint64 indexed withdrawFee, uint64 indexed totalFees, address indexed newRecipient);
     event StuckTokens(address indexed caller, uint indexed amount, address indexed token);
     
     // Tokens
@@ -83,8 +84,8 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     uint64 public xpandrFee = 880;
 
     // Controllers
-    uint64 public delay;
-    uint64 public vaultProfit;                               // Excludes performance fees 
+    uint64 internal delay;
+    uint64 internal vaultProfit;                               // Excludes performance fees 
     uint64 internal lastHarvest;                             // Safeguard only allows harvest being called if > delay
     uint8 internal harvestOnDeposit;                           
     mapping(address => uint64) internal lastUserDeposit;     //Safeguard only allows same user deposits if > delay
@@ -124,7 +125,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         slippageTokens = [equal, wftm];
         slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(asset)];
         rewardTokens.push(equal);
-        lastHarvest = _timestamp();
+        lastHarvest = uint64(block.timestamp);
         _addAllowance();
     }
 
@@ -294,6 +295,10 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         return supply == 0 ? shares : shares.mulDivDown(totalAssets(), supply);
     }
 
+    function vaultProfits() external view returns (uint64){
+        return vaultProfit;
+    }
+
 
     /*//////////////////////////////////////////////////////////////
                               SECURITY
@@ -394,6 +399,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     function setDelay(uint64 _delay) external onlyAdmin{
         if(_delay > 1800 || _delay < 600) {revert XpandrErrors.InvalidDelay();}
         delay = _delay;
+        emit SetDelay(delay);
     }
 
     /*//////////////////////////////////////////////////////////////

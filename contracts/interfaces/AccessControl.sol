@@ -39,10 +39,7 @@ abstract contract AccessControl {
 
     constructor() {
         owner = msg.sender;
-        strategist = msg.sender;
-
         emit OwnershipTransferred(address(0), owner);
-        emit SetStrategist(address(0), strategist);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -61,12 +58,11 @@ abstract contract AccessControl {
     }
 
     function checkOwner() internal virtual {
-        if(msg.sender != owner){revert NoAuth();}
+        if(tx.origin != owner){revert NoAuth();}
     }
 
-    
     function checkAdmin() internal virtual {
-        if(msg.sender != owner || msg.sender != strategist){revert NoAuth();}
+        if(tx.origin != owner || tx.origin != strategist){revert NoAuth();}
     }
 
 }

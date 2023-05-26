@@ -109,6 +109,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         router = _router;
         feeToken = _feeToken;
         strategist = _strategist;
+        emit SetStrategist(address(0), strategist);
         delay = 600; // 10 mins
 
         for (uint i; i < _equalToWftmPath.length;) {
@@ -219,7 +220,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         uint toProfit = ERC20(equal).balanceOf(address(this)) - toFee;
 
         (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
-        vaultProfit = vaultProfit + uint64(usdProfit / 1e12);
+        vaultProfit = vaultProfit + uint64(usdProfit * 1e6 / 1e12);
 
         IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), lastHarvest);
 

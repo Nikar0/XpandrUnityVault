@@ -222,7 +222,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         uint toProfit = ERC20(equal).balanceOf(address(this)) - toFee;
 
         (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
-        vaultProfit = vaultProfit + uint64(usdProfit / 1e12);
+        vaultProfit = vaultProfit + uint64(usdProfit * 1e6 / 1e12);
 
         IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), lastHarvest);
 
@@ -320,27 +320,19 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     //Guards against timestamp spoofing
     function _timestamp() internal view returns (uint64 timestamp){
         (,,uint lastBlock) = (IEqualizerPair(address(asset)).getReserves());
-        timestamp = uint64(lastBlock);
+        timestamp = uint64(lastBlock + 600);
     }
 
     //Guards against sandwich attacks
     function slippage(uint _amount) internal view returns(uint minAmt1, uint minAmt2){
-        uint[] memory t1Amts = IEqualizerPair(slippageLPs[0]).sample(slippageTokens[0], _amount, 5, 2);
-    
-        for(uint i; i < t1Amts.length;){
-            minAmt1 = minAmt1 + t1Amts[i];
-            unchecked{++i;}
-        }
-        minAmt1 = (minAmt1 / 10);
+        uint[] memory t1Amts = IEqualizerPair(slippageLPs[0]).sample(slippageTokens[0], _amount, 3, 2);
+        minAmt1 = (t1Amts[0] + t1Amts[1] + t1Amts[2]) / 3;
 
-        uint[] memory t2Amts = IEqualizerPair(slippageLPs[1]).sample(slippageTokens[1], minAmt1, 5, 2);
-        minAmt1 = (minAmt1 - minAmt1 * 2) / 100;
+        uint[] memory t2Amts = IEqualizerPair(slippageLPs[1]).sample(slippageTokens[1], minAmt1, 3, 2);
+        minAmt1 = minAmt1 - (minAmt1 *  2 / 100);
 
-        for(uint i; i < t2Amts.length;){
-            minAmt2 = minAmt2 + t2Amts[i];
-            unchecked{++i;}
-        }
-        minAmt2 = (minAmt2 / 10) - ((minAmt2 / 10) * 2 ) / 100;
+        minAmt2 = (t2Amts[0] + t2Amts[1] + t2Amts[2]) / 3;
+        minAmt2 = minAmt2 - (minAmt2 * 2 / 100);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -423,7 +415,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         emit CustomTx(_token, bal);
         ERC20(_token).safeApprove(router, 0);
         ERC20(_token).safeApprove(router, type(uint).max);
-        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, customPath, address(this), uint64(block.timestamp));   
+        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, customPath, address(this), _timestamp());   
     }
 
     function _subAllowance() internal {

@@ -57,7 +57,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     address public constant mpx = address(0x66eEd5FF1701E6ed8470DC391F05e27B1d0657eb);
     address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit denominator
     address internal feeToken;      // Switch for which token protocol receives fees in. In mind for Native & Stable but fits any Equal - X token swap.
-    address[] public rewardTokens;
+    address[] internal rewardTokens;
     address[2] internal slippageTokens;
     address[2] internal slippageLPs;
 
@@ -242,7 +242,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     }
 
     function _addLiquidity() internal {
-        uint equalHalf = SafeTransferLib.balanceOf(address(equal), address(this)) >> 1;
+        uint equalHalf = SafeTransferLib.balanceOf(equal, address(this)) >> 1;
         (uint minAmt1, uint minAmt2) = slippage(equalHalf);
         IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt1, equalToWftmPath, address(this), lastHarvest);
         IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt2, equalToMpxPath, address(this), lastHarvest);

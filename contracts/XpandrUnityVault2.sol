@@ -28,7 +28,7 @@ Special thanks to 543 from Equalizer/Guru_Network for the brainstorming & QA
 pragma solidity ^0.8.19;
 
 import {ERC20, ERC4626, FixedPointMathLib} from "./interfaces/solmate/ERC4626light.sol";
-import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
+import {SafeTransferLib} from "./interfaces/solady/SafeTransferLib.sol";
 import {AccessControl} from "./interfaces/AccessControl.sol";
 import {Pauser} from "./interfaces/Pauser.sol";
 import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
@@ -37,7 +37,6 @@ import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
 import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 
 contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
-    using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint;
 
     /*//////////////////////////////////////////////////////////////
@@ -59,8 +58,8 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     address public constant equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
     address public constant mpx = address(0x66eEd5FF1701E6ed8470DC391F05e27B1d0657eb);
     address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit denominator
-    address public feeToken;         //Switch for which token protocol receives fees in. In mind for Native & Stable but fits any Equal - X token swap.
-    address[] public rewardTokens;
+    address internal feeToken;         //Switch for which token protocol receives fees in. In mind for Native & Stable but fits any Equal - X token swap.
+    address[] internal rewardTokens;
     address[2] internal slippageTokens;
     address[2] internal slippageLPs;
 
@@ -134,21 +133,21 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
 
      function depositAll() external {
-        deposit(asset.balanceOf(msg.sender), msg.sender);
+        deposit(SafeTransferLib.balanceOf(address(asset), msg.sender), msg.sender);
     }
 
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
     function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
         if(lastUserDeposit[receiver] != 0) {if(_timestamp() < lastUserDeposit[receiver] + delay) {revert XpandrErrors.UnderTimeLock();}}
-        if(assets > asset.balanceOf(receiver)){revert XpandrErrors.OverCap();}
+        if(assets > SafeTransferLib.balanceOf(address(asset), receiver)){revert XpandrErrors.OverCap();}
         shares = convertToShares(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
 
         lastUserDeposit[receiver] = _timestamp();
         emit Deposit(receiver, receiver, assets, shares);
 
-        asset.safeTransferFrom(receiver, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
+        SafeTransferLib.safeTransferFrom(address(asset), receiver, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
         _mint(receiver, shares);
         _earn();
 
@@ -156,13 +155,13 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     }
 
     function withdrawAll() external {
-        withdraw(ERC20(address(this)).balanceOf(msg.sender), msg.sender, msg.sender);
+        withdraw(SafeTransferLib.balanceOf(address(this), msg.sender), msg.sender, msg.sender);
     }
 
     // Withdraw 'asset' from farm into vault & sends to receiver.
     function withdraw(uint shares, address receiver, address _owner) public override returns (uint assets) {
         if(tx.origin != receiver && tx.origin != _owner){revert XpandrErrors.NotAccountOwner();}
-        if(shares > ERC20(address(this)).balanceOf(_owner)){revert XpandrErrors.OverCap();}
+        if(shares > SafeTransferLib.balanceOf(address(this), _owner)){revert XpandrErrors.OverCap();}
         assets = convertToAssets(shares);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
        
@@ -175,8 +174,8 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
         if(withdrawFee != 0){
             uint withdrawFeeAmt = assetBal * withdrawFee / FEE_DIVISOR;
-            asset.safeTransfer(receiver, assetBal - withdrawFeeAmt);
-        } else {asset.safeTransfer(receiver, assetBal);}
+            SafeTransferLib.safeTransfer(address(asset), receiver, assetBal - withdrawFeeAmt);
+        } else {SafeTransferLib.safeTransfer(address(asset), receiver, assetBal);}
 
     }
 
@@ -191,7 +190,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         emit Harvest(caller);
 
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
-        uint outputBal = ERC20(equal).balanceOf(address(this));
+        uint outputBal = SafeTransferLib.balanceOf(equal, address(this));
 
         if (outputBal != 0 ) {
             _chargeFees(caller);
@@ -212,38 +211,38 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
     // Withdraws funds from the farm
     function _collect(uint _amount) internal {
-        uint assetBal = asset.balanceOf(address(this));
+        uint assetBal = SafeTransferLib.balanceOf(address(asset), address(this));
         if (assetBal < _amount) {
             IEqualizerGauge(gauge).withdraw(_amount - assetBal);
         }
     }
 
     function _chargeFees(address caller) internal {                   
-        uint toFee = ERC20(equal).balanceOf(address(this)) * platformFee / FEE_DIVISOR;
-        uint toProfit = ERC20(equal).balanceOf(address(this)) - toFee;
+        uint toFee = SafeTransferLib.balanceOf(address(equal), address(this)) * platformFee / FEE_DIVISOR;
+        uint toProfit = SafeTransferLib.balanceOf(address(equal), address(this)) - toFee;
 
         (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
-        vaultProfit = vaultProfit + uint64(usdProfit * 1e6 / 1e12);
+        vaultProfit = vaultProfit + uint64(usdProfit);
 
         IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), lastHarvest);
 
-        uint feeBal = ERC20(feeToken).balanceOf(address(this));
+        uint feeBal = SafeTransferLib.balanceOf(feeToken, address(this));
 
         uint callAmt = feeBal * callFee / FEE_DIVISOR;
-        ERC20(feeToken).transfer(caller, callAmt);
+        SafeTransferLib.safeTransfer(feeToken, caller, callAmt);
 
         uint xpandrAmt = feeBal * xpandrFee / FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(xpandrRecipient, xpandrAmt);
+        SafeTransferLib.safeTransfer(feeToken, xpandrRecipient, xpandrAmt);
     }
 
     function _addLiquidity() internal {
-        uint equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
+        uint equalHalf = SafeTransferLib.balanceOf(equal, address(this)) >> 1;
         (uint minAmt1, uint minAmt2) = slippage(equalHalf);
         IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt1, equalToWftmPath, address(this), lastHarvest);
         IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt2, equalToMpxPath, address(this), lastHarvest);
 
-        uint t1Bal = ERC20(wftm).balanceOf(address(this));
-        uint t2Bal = ERC20(mpx).balanceOf(address(this));
+        uint t1Bal = SafeTransferLib.balanceOf(wftm, address(this));
+        uint t2Bal = SafeTransferLib.balanceOf(mpx, address(this));
         IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), lastHarvest);
     }
 
@@ -262,12 +261,12 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     }
 
     function idleFunds() external view returns (uint) {
-        return asset.balanceOf(address(this));
+        return SafeTransferLib.balanceOf(address(asset), address(this));
     }
     
     // Returns total amount of 'asset' held by the vault and contracts it deposits in.
     function totalAssets() public view override returns (uint) {
-        return asset.balanceOf(address(this)) + balanceOfPool();
+        return  SafeTransferLib.balanceOf(address(asset), address(this)) + balanceOfPool();
     }
 
     //Return how much 'asset' the vault has working in the farm
@@ -325,7 +324,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     //Guards against timestamp spoofing
     function _timestamp() internal view returns (uint64 timestamp){
         (,,uint lastBlock) = (IEqualizerPair(address(asset)).getReserves());
-        timestamp = uint64(lastBlock + 600);
+        timestamp = uint64(lastBlock + 700);
     }
 
     //Guards against sandwich attacks
@@ -334,10 +333,10 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         minAmt1 = (t1Amts[0] + t1Amts[1] + t1Amts[2]) / 3;
 
         uint[] memory t2Amts = IEqualizerPair(slippageLPs[1]).sample(slippageTokens[1], minAmt1, 3, 2);
-        minAmt1 = minAmt1 - (minAmt1 *  2 / 100);
+        minAmt1 = minAmt1 - (minAmt1 *  3 / 100);
 
         minAmt2 = (t2Amts[0] + t2Amts[1] + t2Amts[2]) / 3;
-        minAmt2 = minAmt2 - (minAmt2 * 2 / 100);
+        minAmt2 = minAmt2 - (minAmt2 * 3 / 100);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -346,7 +345,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
     function setFeesAndRecipient(uint64 _platformFee, uint64 _withdrawFee, uint64 _callFee, uint64 _recipientFee, address _recipient) external onlyOwner {
         if(_platformFee > 35){revert XpandrErrors.OverCap();}
-        if(_withdrawFee != 0 || _withdrawFee != 1){revert XpandrErrors.OverCap();}
+        if(_withdrawFee != 0 && _withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _recipientFee;
         if(sum > FEE_DIVISOR){revert XpandrErrors.OverCap();}
         if(_recipient != address(0) && _recipient != xpandrRecipient){xpandrRecipient = _recipient;}
@@ -386,13 +385,13 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
        feeToken = _feeToken;
        emit SetFeeToken(_feeToken);
       
-       ERC20(_feeToken).safeApprove(router, 0);
-       ERC20(_feeToken).safeApprove(router, type(uint).max);
+       SafeTransferLib.safeApprove(feeToken, router, 0);
+       SafeTransferLib.safeApprove(feeToken, router, type(uint).max);
     }
 
     // Sets harvestOnDeposit
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
-        if(_harvestOnDeposit != 0 || _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
+        if(_harvestOnDeposit != 0 && _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
     } 
 
@@ -411,7 +410,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
         if(_token == equal || _token == wftm || _token == mpx){revert XpandrErrors.InvalidTokenOrPath();}
         uint bal;
-        if(_amount == 0) {bal = ERC20(_token).balanceOf(address(this));} else {bal = _amount;}
+        if(_amount == 0) {bal = SafeTransferLib.balanceOf(_token, address(this));}
 
         for (uint i; i < _path.length;) {
             customPath.push(_path[i]);
@@ -419,23 +418,23 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         }
 
         emit CustomTx(_token, bal);
-        ERC20(_token).safeApprove(router, 0);
-        ERC20(_token).safeApprove(router, type(uint).max);
+        SafeTransferLib.safeApprove(_token, router, 0);
+        SafeTransferLib.safeApprove(_token, router, type(uint).max);
         IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, customPath, address(this), _timestamp());   
     }
 
     function _subAllowance() internal {
-        asset.safeApprove(gauge, 0);
-        ERC20(equal).safeApprove(router, 0);
-        ERC20(wftm).safeApprove(router, 0);
-        ERC20(mpx).safeApprove(router, 0);
+        SafeTransferLib.safeApprove(address(asset), gauge, 0);
+        SafeTransferLib.safeApprove(equal, router, 0);
+        SafeTransferLib.safeApprove(wftm, router, 0);
+        SafeTransferLib.safeApprove(mpx, router, 0);
     }
 
     function _addAllowance() internal {
-        asset.safeApprove(gauge, type(uint).max);
-        ERC20(equal).safeApprove(router, type(uint).max);
-        ERC20(wftm).safeApprove(router, type(uint).max);
-        ERC20(mpx).safeApprove(router, type(uint).max);
+        SafeTransferLib.safeApprove(address(asset), gauge, type(uint).max);
+        SafeTransferLib.safeApprove(equal, router, type(uint).max);
+        SafeTransferLib.safeApprove(wftm, router, type(uint).max);
+        SafeTransferLib.safeApprove(mpx, router, type(uint).max);
     }
 
     //ERC4626 hook. Called by deposit if harvestOnDeposit != 0. Args unused but part of 4626 spec

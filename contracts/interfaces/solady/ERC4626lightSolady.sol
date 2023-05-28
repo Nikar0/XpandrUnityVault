@@ -2,12 +2,13 @@
 pragma solidity ^0.8.19;
 
 import {ERC20} from "./ERC20.sol";
-import {SafeTransferLib} from "../solady/SafeTransferLib.sol";
-import {FixedPointMathLib} from "./FixedPointMathLib.sol";
+import {SafeTransferLib} from "./SafeTransferLib.sol";
+import {FixedPointMathLib} from "../../interfaces/solmate/FixedPointMathLib.sol";
 
 /// @notice Minimal ERC4626 tokenized Vault implementation.
 /// @author Solmate (https://github.com/transmissions11/solmate/blob/main/src/mixins/ERC4626.sol)
 abstract contract ERC4626 is ERC20 {
+    using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint256;
 
     /*//////////////////////////////////////////////////////////////
@@ -29,13 +30,17 @@ abstract contract ERC4626 is ERC20 {
     //////////////////////////////////////////////////////////////*/
 
     ERC20 public immutable asset;
+    string internal name;
+    string internal symbol;
 
     constructor(
         ERC20 _asset,
         string memory _name,
         string memory _symbol
-    ) ERC20(_name, _symbol, _asset.decimals()) {
+    ) ERC20() {
         asset = _asset;
+        name = _name;
+        symbol = _symbol;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -79,9 +84,9 @@ abstract contract ERC4626 is ERC20 {
         shares = convertToShares(assets); // No need to check for rounding error, previewWithdraw rounds up.
 
         if (msg.sender != owner) {
-            uint256 allowed = allowance[owner][msg.sender]; // Saves gas for limited approvals.
+            uint256 allowed = allowance(owner, msg.sender); // Saves gas for limited approvals.
 
-            if (allowed != type(uint256).max) allowance[owner][msg.sender] = allowed - shares;
+            if (allowed != type(uint256).max) {allowed = allowed - shares;}
         }
 
         //beforeWithdraw(assets, shares);
@@ -124,13 +129,13 @@ abstract contract ERC4626 is ERC20 {
     function totalAssets() public view virtual returns (uint256);
 
     function convertToShares(uint256 assets) public view virtual returns (uint256) {
-        uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
+        uint256 supply = totalSupply(); // Saves an extra SLOAD if totalSupply is non-zero.
 
         return supply == 0 ? assets : assets.mulDivDown(supply, totalAssets());
     }
 
     function convertToAssets(uint256 shares) public view virtual returns (uint256) {
-        uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
+        uint256 supply = totalSupply(); // Saves an extra SLOAD if totalSupply is non-zero.
         return supply == 0 ? shares : shares.mulDivDown(totalAssets(), supply);
     }
 

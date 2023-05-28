@@ -25,8 +25,7 @@ Special thanks to 543 from Equalizer/Guru_Network for the brainstorming & QA
 
 pragma solidity ^0.8.19;
 
-import {ERC20, ERC4626, FixedPointMathLib} from "./interfaces/solmate/ERC4626light.sol";
-import {SafeTransferLib} from "./interfaces/solady/SafeTransferLib.sol";
+import {ERC20, ERC4626, FixedPointMathLib, SafeTransferLib} from "./interfaces/solady/ERC4626lightSolady.sol";
 import {AccessControl} from "./interfaces/AccessControl.sol";
 import {Pauser} from "./interfaces/Pauser.sol";
 import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
@@ -34,7 +33,7 @@ import {IEqualizerPair} from "./interfaces/IEqualizerPair.sol";
 import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
 import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 
-contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
+contract XpandrUnityVaultSolady is ERC4626, AccessControl, Pauser {
     using FixedPointMathLib for uint;
 
     /*//////////////////////////////////////////////////////////////
@@ -133,7 +132,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
 
      function depositAll() external {
-        deposit(SafeTransferLib.balanceOf(address(asset), msg.sender), msg.sender);
+        deposit(SafeTransferLib.balanceOf(address(asset), address(this)), msg.sender);
     }
 
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
@@ -209,15 +208,15 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     // Withdraws funds from the farm
     function _collect(uint _amount) internal {
-        uint assetBal = SafeTransferLib.balanceOf(address(asset), address(this));
+        uint assetBal =  SafeTransferLib.balanceOf(address(asset), address(this));
         if (assetBal < _amount) {
             IEqualizerGauge(gauge).withdraw(_amount - assetBal);
         }
     }
 
     function _chargeFees(address caller) internal {                   
-        uint toFee = SafeTransferLib.balanceOf(address(equal), address(this)) * platformFee / FEE_DIVISOR;
-        uint toProfit = SafeTransferLib.balanceOf(address(equal), address(this)) - toFee;
+        uint toFee =  SafeTransferLib.balanceOf(equal, address(this)) * platformFee / FEE_DIVISOR;
+        uint toProfit = SafeTransferLib.balanceOf(equal, address(this)) - toFee;
 
         (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
         vaultProfit = vaultProfit + uint64(usdProfit * 1e6 / 1e12);
@@ -242,7 +241,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     }
 
     function _addLiquidity() internal {
-        uint equalHalf = SafeTransferLib.balanceOf(address(equal), address(this)) >> 1;
+        uint equalHalf = SafeTransferLib.balanceOf(equal, address(this)) >> 1;
         (uint minAmt1, uint minAmt2) = slippage(equalHalf);
         IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt1, equalToWftmPath, address(this), lastHarvest);
         IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt2, equalToMpxPath, address(this), lastHarvest);
@@ -287,21 +286,29 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     // Function for UIs to display the current value of 1 vault share
     function getPricePerFullShare() external view returns (uint) {
-        return totalSupply == 0 ? 1e18 : totalAssets() * 1e18 / totalSupply;
+        return totalSupply() == 0 ? 1e18 : totalAssets() * 1e18 / totalSupply();
     }
 
     function convertToShares(uint256 assets) public view override returns (uint256) {
-        uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
+        uint256 supply = totalSupply(); // Saves an extra SLOAD if totalSupply is non-zero.
         return supply == 0 ? assets : assets.mulDivDown(supply, totalAssets());
     }
 
     function convertToAssets(uint256 shares) public view override returns (uint256) {
-        uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
+        uint256 supply = totalSupply(); // Saves an extra SLOAD if totalSupply is non-zero.
         return supply == 0 ? shares : shares.mulDivDown(totalAssets(), supply);
     }
 
     function vaultProfits() external view returns (uint64){
         return vaultProfit;
+    }
+
+    function totalSupply() public view override returns (uint256 result) {
+        /// @solidity memory-safe-assembly
+        uint two = 2;
+        assembly {
+            result := sload(_TOTAL_SUPPLY_SLOT)
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -416,7 +423,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
         if(_token == equal || _token == wftm || _token == mpx){revert XpandrErrors.InvalidTokenOrPath();}
         uint bal;
-        if(_amount == 0) {bal = ERC20(_token).balanceOf(address(this));}
+        if(_amount == 0) {bal = SafeTransferLib.balanceOf(_token, address(this));}
         else {bal = _amount;}
         
         for (uint i; i < _path.length;) {
@@ -425,7 +432,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         }
 
         emit CustomTx(_token, bal);
-        SafeTransferLib.safeApprove(_token, router, 0);
+        SafeTransferLib.safeApprove(_token,router, 0);
         SafeTransferLib.safeApprove(_token, router, type(uint).max);
         IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, customPath, address(this), _timestamp());
     }

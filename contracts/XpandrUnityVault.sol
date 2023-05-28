@@ -338,10 +338,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         minAmt1 = (t1Amts[0] + t1Amts[1] + t1Amts[2]) / 3;
 
         uint[] memory t2Amts = IEqualizerPair(slippageLPs[1]).sample(slippageTokens[1], minAmt1, 3, 2);
-        minAmt1 = minAmt1 - (minAmt1 *  2 / 100);
+        minAmt1 = minAmt1 - (minAmt1 *  3 / 100);
 
         minAmt2 = (t2Amts[0] + t2Amts[1] + t2Amts[2]) / 3;
-        minAmt2 = minAmt2 - (minAmt2 * 2 / 100);
+        minAmt2 = minAmt2 - (minAmt2 * 3 / 100);
     }
 
     /*//////////////////////////////////////////////////////////////

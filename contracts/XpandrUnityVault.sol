@@ -328,8 +328,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     //Guards against timestamp spoofing
     function _timestamp() internal view returns (uint64 timestamp){
-        (,,uint lastBlock) = (IEqualizerPair(address(asset)).getReserves());
-        timestamp = uint64(lastBlock + 600);
+        (,,uint lastBlock) = IEqualizerPair(address(asset)).getReserves();
+        timestamp = uint64(lastBlock + 700);
     }
 
     //Guards against sandwich attacks
@@ -350,7 +350,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     function setFeesAndRecipient(uint64 _platformFee, uint64 _withdrawFee, uint64 _callFee, uint64 _stratFee, uint64 _treasuryFee, uint64 _recipientFee, address _recipient) external onlyOwner {
         if(_platformFee > 35){revert XpandrErrors.OverCap();}
-        if(_withdrawFee != 0 || _withdrawFee != 1){revert XpandrErrors.OverCap();}
+        if(_withdrawFee != 0 && _withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         if(sum > FEE_DIVISOR){revert XpandrErrors.OverCap();}
         if(_recipient != address(0) && _recipient != feeRecipient){feeRecipient = _recipient;}
@@ -397,7 +397,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     }
 
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
-        if(_harvestOnDeposit != 0 || _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
+        if(_harvestOnDeposit != 0 && _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
     } 
 
@@ -416,7 +416,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
         if(_token == equal || _token == wftm || _token == mpx){revert XpandrErrors.InvalidTokenOrPath();}
         uint bal;
-        if(_amount == 0) {bal = ERC20(_token).balanceOf(address(this));}
+        if(_amount == 0) {bal = SafeTransferLib.balanceOf(_token, address(this));}
         else {bal = _amount;}
         
         for (uint i; i < _path.length;) {

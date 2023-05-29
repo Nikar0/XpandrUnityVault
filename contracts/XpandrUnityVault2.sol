@@ -49,7 +49,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
     event Harvest(address indexed harvester);
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
-    event SetFeeToken(address indexed newFeeToken);
+    event SetFeeToken(address indexed newFeeToken, IEqualizerRouter.Routes[] indexed _path);
     event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
     event DelaySet(uint64 delay);
@@ -78,7 +78,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     // Paths
     IEqualizerRouter.Routes[] public equalToWftmPath;
     IEqualizerRouter.Routes[] public equalToMpxPath;
-    IEqualizerRouter.Routes[] public customPath;
+    IEqualizerRouter.Routes[] public feeTokenPath;
 
     // Fee Structure
     uint64 public constant FEE_DIVISOR = 1000;               
@@ -104,7 +104,8 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         address _xpandrRecipient,
         address _strategist,
         IEqualizerRouter.Routes[] memory _equalToWftmPath,
-        IEqualizerRouter.Routes[] memory _equalToMpxPath
+        IEqualizerRouter.Routes[] memory _equalToMpxPath,
+        IEqualizerRouter.Routes[] memory _feeTokenPath
         )
        ERC4626(
             _asset,
@@ -117,6 +118,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         feeToken = _feeToken;
         xpandrRecipient = _xpandrRecipient;
         strategist = _strategist;
+        emit SetStrategist(address(0), strategist);
         delay = 600; // 10 mins
         percent = _percent;
 
@@ -127,6 +129,11 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
         for (uint i; i < _equalToMpxPath.length;) {
             equalToMpxPath.push(_equalToMpxPath[i]);
+            unchecked{++i;}
+        }
+
+        for (uint i; i < _feeTokenPath.length;) {
+            feeTokenPath.push(_feeTokenPath[i]);
             unchecked{++i;}
         }
         slippageTokens = [equal, wftm];
@@ -233,7 +240,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         (uint usdProfit) = IEqualizerPair(slippageLPs[2]).sample(equal, toProfit, 1, 1)[0];
         vaultProfit = vaultProfit + uint64(usdProfit * 1e6);
 
-        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), lastHarvest);
+        IEqualizerRouter(router).swapExactTokensForTokens(toFee, 1, feeTokenPath, address(this), lastHarvest);
 
         uint feeBal = SafeTransferLib.balanceOf(feeToken, address(this));
 
@@ -386,10 +393,16 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         emit SetPaths(equalToMpxPath, equalToWftmPath);
     }
 
-   function setFeeToken(address _feeToken) external onlyAdmin {
+   function setFeeToken(address _feeToken, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
        if(_feeToken == address(0) || _feeToken == feeToken){revert XpandrErrors.InvalidTokenOrPath();}
        feeToken = _feeToken;
-       emit SetFeeToken(_feeToken);
+       if(feeTokenPath.length != 0){
+            for (uint i; i < _path.length;) {
+            feeTokenPath.push(_path[i]);
+            unchecked{++i;}
+            }
+        }
+       emit SetFeeToken(_feeToken, feeTokenPath);
       
        SafeTransferLib.safeApprove(feeToken, router, 0);
        SafeTransferLib.safeApprove(feeToken, router, type(uint).max);
@@ -425,15 +438,10 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         uint bal;
         if(_amount == 0) {bal = SafeTransferLib.balanceOf(_token, address(this));}
 
-        for (uint i; i < _path.length;) {
-            customPath.push(_path[i]);
-            unchecked{++i;}
-        }
-
         emit CustomTx(_token, bal);
         SafeTransferLib.safeApprove(_token, router, 0);
         SafeTransferLib.safeApprove(_token, router, type(uint).max);
-        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, customPath, address(this), _timestamp());   
+        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, _path, address(this), _timestamp());   
     }
 
     function _subAllowance() internal {

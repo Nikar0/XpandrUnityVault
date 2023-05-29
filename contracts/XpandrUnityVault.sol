@@ -106,8 +106,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         )
        ERC4626(
             _asset,
-            string(abi.encodePacked("Tester Vault")),
-            string(abi.encodePacked("LP"))
+            string(abi.encodePacked("XPANDR MPX-FTM EQUALIZER")),
+            string(abi.encodePacked("XpE-MPX-FTM"))
         )
         {
         gauge = _gauge;
@@ -130,7 +130,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         slippageTokens = [equal, wftm];
         slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(_asset), address(0x76fa7935a5AFEf7fefF1C88bA858808133058908)];
         rewardTokens.push(equal);
-        lastHarvest = uint64(block.timestamp);
+        lastHarvest = _timestamp();
         _addAllowance();
     }
 
@@ -226,7 +226,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         uint toProfit = SafeTransferLib.balanceOf(address(equal), address(this)) - toFee;
 
         uint usdProfit = IEqualizerPair(slippageLPs[2]).getAmountOut(toProfit, equal);
-        vaultProfit = vaultProfit + uint64(usdProfit / 1e6);
+        vaultProfit = vaultProfit + uint64(usdProfit);
 
         IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), lastHarvest);
 
@@ -263,11 +263,13 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
 
     // Returns amount of reward in native upon calling the harvest function
-    function callReward() public view returns (uint wrappedOut) {
+    function callReward() public view returns (uint) {
         uint outputBal = IEqualizerGauge(gauge).earned(equal, address(this));
+        uint wrappedOut;
         if (outputBal != 0) {
-            wrappedOut = IEqualizerPair(slippageTokens[0]).sample(equal, outputBal, 1, 1)[0] * platformFee / FEE_DIVISOR * callFee / FEE_DIVISOR;
+            (wrappedOut,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
         } 
+        return wrappedOut * platformFee / FEE_DIVISOR * callFee / FEE_DIVISOR;
     }
 
     function idleFunds() external view returns (uint) {
@@ -294,18 +296,18 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         return totalSupply == 0 ? 1e18 : totalAssets() * 1e18 / totalSupply;
     }
 
-    function convertToShares(uint256 assets) public view override returns (uint256) {
-        uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
+    function convertToShares(uint assets) public view override returns (uint) {
+        uint supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
         return supply == 0 ? assets : assets.mulDivDown(supply, totalAssets());
     }
 
-    function convertToAssets(uint256 shares) public view override returns (uint256) {
-        uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
+    function convertToAssets(uint shares) public view override returns (uint) {
+        uint supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
         return supply == 0 ? shares : shares.mulDivDown(totalAssets(), supply);
     }
 
     function vaultProfits() external view returns (uint64){
-        return vaultProfit;
+        return vaultProfit / 1e6;
     }
 
     /*//////////////////////////////////////////////////////////////

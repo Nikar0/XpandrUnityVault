@@ -48,4 +48,7 @@ interface IEqualizerRouter {
         address to,
         uint deadline
     ) external;
+
+    function getAmountOut(uint amountIn, address tokenIn, address tokenOut) external view returns (uint amount, bool stable);
+
 }

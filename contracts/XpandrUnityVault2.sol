@@ -259,11 +259,12 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
 
     // Returns amount of reward in native upon calling the harvest function
-    function callReward() public view returns (uint wrappedOut) {
+    function callReward() public view returns (uint wftmReward) {
         uint outputBal = IEqualizerGauge(gauge).earned(equal, address(this));
         if (outputBal != 0) {
-            wrappedOut = IEqualizerPair(slippageTokens[0]).sample(equal, outputBal, 1, 1)[0] * platformFee / FEE_DIVISOR * callFee / FEE_DIVISOR;
+            (wftmReward,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
         } 
+        wftmReward = wftmReward * platformFee / FEE_DIVISOR * callFee / FEE_DIVISOR;
     }
 
     function idleFunds() external view returns (uint) {

@@ -220,7 +220,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         uint outputBal = rewardBalance();
         uint wrappedOut;
         if (outputBal != 0) {
-            wrappedOut = IEqualizerPair(slippageTokens[0]).getAmountOut(outputBal, equal);
+            (wrappedOut,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
         } 
         return wrappedOut * platformFee / FEE_DIVISOR * callFee / FEE_DIVISOR;
     }

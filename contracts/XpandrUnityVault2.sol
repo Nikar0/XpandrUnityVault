@@ -132,7 +132,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         slippageTokens = [equal, wftm];
         slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(asset), address(0x76fa7935a5AFEf7fefF1C88bA858808133058908)];
         rewardTokens.push(equal);
-        lastHarvest = _timestamp();
+        lastHarvest = uint64(block.timestamp);
         _addAllowance();
     }
 
@@ -229,7 +229,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         uint toFee = SafeTransferLib.balanceOf(address(equal), address(this)) * platformFee / FEE_DIVISOR;
         uint toProfit = SafeTransferLib.balanceOf(address(equal), address(this)) - toFee;
 
-        uint usdProfit = IEqualizerPair(slippageLPs[2]).getAmountOut(toProfit, equal);
+        uint usdProfit = IEqualizerPair(slippageLPs[2]).sample(equal, toProfit, 1, 1)[0];
         vaultProfit = vaultProfit + uint64(usdProfit);
 
         IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), lastHarvest);

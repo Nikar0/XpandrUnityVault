@@ -354,7 +354,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
                                SETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function setFeesAndRecipient(uint64 _withdrawFee, uint64 _callFee, uint64 _treasuryFee, uint64 _stratFee, uint64 _recipientFee, address _recipient) external onlyOwner {
+    function setFeesAndRecipient(uint64 _withdrawFee, uint64 _callFee, uint64 _treasuryFee, uint64 _stratFee, uint64 _recipientFee, address _recipient) external onlyAdmin {
         if(_withdrawFee != 0 && _withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         if(sum > FEE_DIVISOR){revert XpandrErrors.OverCap();}
@@ -375,7 +375,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         emit SetRouterOrGauge(router, gauge);
     }
 
-    function setPaths(IEqualizerRouter.Routes[] memory _equalToMpx, IEqualizerRouter.Routes[] memory _equalToWftm) external onlyAdmin{
+    function setPaths(IEqualizerRouter.Routes[] memory _equalToMpx, IEqualizerRouter.Routes[] memory _equalToWftm) external onlyOwner{
         if(_equalToMpx.length != 0){
             for (uint i; i < _equalToMpx.length;) {
             equalToMpxPath.push(_equalToMpx[i]);

@@ -263,13 +263,11 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
 
     // Returns amount of reward in native upon calling the harvest function
-    function callReward() public view returns (uint) {
-        uint outputBal = rewardBalance();
-        uint wrappedOut;
+    function callReward() public view returns (uint wrappedOut) {
+        uint outputBal = IEqualizerGauge(gauge).earned(equal, address(this));
         if (outputBal != 0) {
-            wrappedOut = IEqualizerPair(slippageTokens[0]).getAmountOut(outputBal, equal);
+            wrappedOut = IEqualizerPair(slippageTokens[0]).sample(equal, outputBal, 1, 1)[0] * platformFee / FEE_DIVISOR * callFee / FEE_DIVISOR;
         } 
-        return wrappedOut * platformFee / FEE_DIVISOR * callFee / FEE_DIVISOR;
     }
 
     function idleFunds() external view returns (uint) {
@@ -287,7 +285,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     }
 
     // Returns rewards unharvested
-    function rewardBalance() public view returns (uint) {
+    function rewardBalance() external view returns (uint) {
         return IEqualizerGauge(gauge).earned(equal, address(this));
     }
 

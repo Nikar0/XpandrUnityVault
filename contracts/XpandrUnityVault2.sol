@@ -5,9 +5,10 @@
 @title  - XpandrUnityVault2
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
-          Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers / Adjustable platform fee for promotional events w/ max cap.
+          Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD /
+          Deposit & harvest buffers / Timestamp & Slippage protection /
 
-@notice - This version sends all fees to a feeRecipient contract instead of multiple txs to each receiving protocol address.
+@notice - This version sends all fees to a contract instead of multiple txs to each receiving protocol address.
         - Less global variables/bytecode, cheaper harvest tx
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
@@ -16,8 +17,11 @@ https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 Vault based on EIP-4626 by @joey_santoro, @transmissions11, et all.
 https://eips.ethereum.org/EIPS/eip-4626
 
-Using solmate's gas optimized libs
+Using solmate libs for ERC20, ERC4626
 https://github.com/transmissions11/solmate
+
+Using solady SafeTransferLib
+https://github.com/Vectorized/solady/
 
 Special thanks to 543 from Equalizer/Guru_Network for the brainstorming & QA
 
@@ -48,7 +52,8 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     event SetFeeToken(address indexed newFeeToken);
     event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
-    event SetDelay(uint64 delay);
+    event DelaySet(uint64 delay);
+    event SlippageSet(uint8 percent);
     event Panic(address indexed caller);
     event CustomTx(address indexed from, uint indexed amount);
     event StuckTokens(address indexed caller, uint indexed amount, address indexed token);
@@ -61,7 +66,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     address internal feeToken;         //Switch for which token protocol receives fees in. In mind for Native & Stable but fits any Equal - X token swap.
     address[] internal rewardTokens;
     address[2] internal slippageTokens;
-    address[2] internal slippageLPs;
+    address[3] internal slippageLPs;
 
     // 3rd party contracts
     address public gauge;
@@ -77,7 +82,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
     // Fee Structure
     uint64 public constant FEE_DIVISOR = 1000;               
-    uint64 public platformFee = 35;                          // 3.5% Platform fee cap
+    uint64 public constant platformFee = 35;                 // 3.5% Platform fee cap
     uint64 public withdrawFee;                               // 0% withdraw fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0 or 0.1%
     uint64 public callFee = 120;
     uint64 public xpandrFee = 880;
@@ -86,13 +91,15 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     uint64 internal delay;
     uint64 internal vaultProfit;                               // Excludes performance fees 
     uint64 internal lastHarvest;                             // Safeguard only allows harvest being called if > delay
-    uint8 internal harvestOnDeposit;                           
+    uint8 internal harvestOnDeposit;    
+    uint8 internal percent;                       
     mapping(address => uint64) internal lastUserDeposit;     //Safeguard only allows same user deposits if > delay
 
     constructor(
         ERC20 _asset,
         address _gauge,
         address _router,
+        uint8 _percent,
         address _feeToken,
         address _xpandrRecipient,
         address _strategist,
@@ -111,6 +118,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         xpandrRecipient = _xpandrRecipient;
         strategist = _strategist;
         delay = 600; // 10 mins
+        percent = _percent;
 
         for (uint i; i < _equalToWftmPath.length;) {
             equalToWftmPath.push(_equalToWftmPath[i]);
@@ -122,7 +130,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
             unchecked{++i;}
         }
         slippageTokens = [equal, wftm];
-        slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(asset)];
+        slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(asset), address(0x76fa7935a5AFEf7fefF1C88bA858808133058908)];
         rewardTokens.push(equal);
         lastHarvest = uint64(block.timestamp);
         _addAllowance();
@@ -221,8 +229,9 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         uint toFee = SafeTransferLib.balanceOf(address(equal), address(this)) * platformFee / FEE_DIVISOR;
         uint toProfit = SafeTransferLib.balanceOf(address(equal), address(this)) - toFee;
 
-        (uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
-        vaultProfit = vaultProfit + uint64(usdProfit);
+        //(uint usdProfit,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
+        (uint usdProfit) = IEqualizerPair(slippageLPs[2]).sample(equal, toProfit, 1, 1)[0];
+        vaultProfit = vaultProfit + uint64(usdProfit * 1e6);
 
         IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), lastHarvest);
 
@@ -298,7 +307,6 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         return vaultProfit;
     }
 
-
     /*//////////////////////////////////////////////////////////////
                               SECURITY
     //////////////////////////////////////////////////////////////*/
@@ -324,7 +332,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     //Guards against timestamp spoofing
     function _timestamp() internal view returns (uint64 timestamp){
         (,,uint lastBlock) = (IEqualizerPair(address(asset)).getReserves());
-        timestamp = uint64(lastBlock + 700);
+        timestamp = uint64(lastBlock + 800);
     }
 
     //Guards against sandwich attacks
@@ -343,14 +351,12 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
                                SETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function setFeesAndRecipient(uint64 _platformFee, uint64 _withdrawFee, uint64 _callFee, uint64 _recipientFee, address _recipient) external onlyOwner {
-        if(_platformFee > 35){revert XpandrErrors.OverCap();}
+    function setFeesAndRecipient(uint64 _withdrawFee, uint64 _callFee, uint64 _recipientFee, address _recipient) external onlyOwner {
         if(_withdrawFee != 0 && _withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _recipientFee;
         if(sum > FEE_DIVISOR){revert XpandrErrors.OverCap();}
         if(_recipient != address(0) && _recipient != xpandrRecipient){xpandrRecipient = _recipient;}
 
-        platformFee = _platformFee;
         callFee = _callFee;
         withdrawFee = _withdrawFee;
         xpandrFee = _recipientFee;
@@ -398,8 +404,15 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     function setDelay(uint64 _delay) external onlyAdmin{
         if(_delay > 1800 || _delay < 600) {revert XpandrErrors.InvalidDelay();}
         delay = _delay;
-        emit SetDelay(delay);
+        emit DelaySet(delay);
     }
+
+    function setSlippage(uint8 _percent) external onlyAdmin {
+        if(_percent > 10){revert XpandrErrors.OverCap();}
+        percent = percent;
+        emit SlippageSet(percent);
+    }
+
 
     /*//////////////////////////////////////////////////////////////
                                UTILS

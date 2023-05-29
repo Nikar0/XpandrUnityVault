@@ -164,7 +164,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         uint rewardBal = ERC20(equal).balanceOf(address(this));
 
         uint toProfit = rewardBal - (rewardBal * platformFee / FEE_DIVISOR);
-        uint profitBal = IEqualizerPair(slippageLPs[2]).getAmountOut(toProfit, equal);
+        uint profitBal = IEqualizerPair(slippageLPs[2]).sample(equal, toProfit, 1, 1)[0];
         harvestProfit = harvestProfit + uint64(profitBal * 1e6 / 1e12);
 
         if (rewardBal != 0 ) {

@@ -46,7 +46,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     
     event Harvest(address indexed harvester);
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
-    event SetFeeToken(address indexed newFeeToken, IEqualizerRouter.Routes[] indexed _path);
+    event SetFeeToken(address indexed newFeeToken);
     event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
     event Panic(address indexed caller);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
@@ -76,7 +76,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     // Paths
     IEqualizerRouter.Routes[] public equalToWftmPath;
     IEqualizerRouter.Routes[] public equalToMpxPath;
-    IEqualizerRouter.Routes[] public feeTokenPath;
 
     // Fee Structure
     uint64 public constant FEE_DIVISOR = 1000;               
@@ -103,8 +102,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         address _feeToken,
         address _strategist,
         IEqualizerRouter.Routes[] memory _equalToWftmPath,
-        IEqualizerRouter.Routes[] memory _equalToMpxPath,
-        IEqualizerRouter.Routes[] memory _feeTokenPath
+        IEqualizerRouter.Routes[] memory _equalToMpxPath
         )
        ERC4626(
             _asset,
@@ -129,12 +127,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
             equalToMpxPath.push(_equalToMpxPath[i]);
             unchecked{++i;}
         }
-
-        for (uint i; i < _feeTokenPath.length;) {
-            feeTokenPath.push(_feeTokenPath[i]);
-            unchecked{++i;}
-        }
-
         slippageTokens = [equal, wftm];
         slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(_asset), address(0x76fa7935a5AFEf7fefF1C88bA858808133058908)];
         rewardTokens.push(equal);
@@ -233,10 +225,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         uint toFee = SafeTransferLib.balanceOf(address(equal), address(this)) * platformFee / FEE_DIVISOR;
         uint toProfit = SafeTransferLib.balanceOf(address(equal), address(this)) - toFee;
 
-        (uint usdProfit) = IEqualizerPair(slippageLPs[2]).sample(equal, toProfit, 1, 1)[0];
-        vaultProfit = vaultProfit + uint64(usdProfit * 1e6);
+        uint usdProfit = IEqualizerPair(slippageLPs[2]).getAmountOut(toProfit, equal);
+        vaultProfit = vaultProfit + uint64(usdProfit / 1e6);
 
-        IEqualizerRouter(router).swapExactTokensForTokens(toFee, 1, feeTokenPath, address(this), lastHarvest);
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), lastHarvest);
 
         uint feeBal = SafeTransferLib.balanceOf(feeToken, address(this));
 
@@ -275,7 +267,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         uint outputBal = rewardBalance();
         uint wrappedOut;
         if (outputBal != 0) {
-            (wrappedOut,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
+            wrappedOut = IEqualizerPair(slippageTokens[0]).getAmountOut(outputBal, equal);
         } 
         return wrappedOut * platformFee / FEE_DIVISOR * callFee / FEE_DIVISOR;
     }
@@ -399,16 +391,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         emit SetPaths(equalToMpxPath, equalToWftmPath);
     }
 
-   function setFeeToken(address _feeToken, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
+   function setFeeToken(address _feeToken) external onlyAdmin {
        if(_feeToken == address(0) || _feeToken == feeToken){revert XpandrErrors.InvalidTokenOrPath();}
        feeToken = _feeToken;
-       if(feeTokenPath.length != 0){
-            for (uint i; i < _path.length;) {
-            feeTokenPath.push(_path[i]);
-            unchecked{++i;}
-            }
-        }
-       emit SetFeeToken(_feeToken, feeTokenPath);
+       emit SetFeeToken(_feeToken);
       
        SafeTransferLib.safeApprove(feeToken, router, 0);
        SafeTransferLib.safeApprove(feeToken, router, type(uint).max);
@@ -426,8 +412,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     }
 
     function setSlippage(uint8 _percent) external onlyAdmin {
-        if(_percent > 10){revert XpandrErrors.OverCap();}
-        percent = percent;
+        if(_percent > 10 || _percent < 1){revert XpandrErrors.OverCap();}
+        percent = _percent;
         emit SlippageSet(percent);
     }
 

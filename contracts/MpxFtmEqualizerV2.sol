@@ -54,7 +54,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     address internal feeToken;
     address[] public rewardTokens;
     address[2] internal slippageTokens;
-    address[2] internal slippageLPs;
+    address[3] internal slippageLPs;
 
     // Third party contracts
     address public gauge;
@@ -110,7 +110,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
             equalToMpxPath.push(_equalToMpxPath[i]);
         }
         slippageTokens = [equal, wftm];
-        slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(_asset)];
+        slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(asset), address(0x76fa7935a5AFEf7fefF1C88bA858808133058908)];
         rewardTokens.push(equal);
         lastHarvest = uint64(block.timestamp);
         delay = 600; // 10 mins
@@ -164,7 +164,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         uint rewardBal = ERC20(equal).balanceOf(address(this));
 
         uint toProfit = rewardBal - (rewardBal * platformFee / FEE_DIVISOR);
-        (uint profitBal,) = IEqualizerRouter(router).getAmountOut(toProfit, equal, usdc);
+        uint profitBal = IEqualizerPair(slippageLPs[2]).getAmountOut(toProfit, equal);
         harvestProfit = harvestProfit + uint64(profitBal * 1e6 / 1e12);
 
         if (rewardBal != 0 ) {
@@ -220,7 +220,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         uint outputBal = rewardBalance();
         uint wrappedOut;
         if (outputBal != 0) {
-            (wrappedOut,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
+            wrappedOut = IEqualizerPair(slippageTokens[0]).getAmountOut(outputBal, equal);
         } 
         return wrappedOut * platformFee / FEE_DIVISOR * callFee / FEE_DIVISOR;
     }

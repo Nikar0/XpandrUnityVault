@@ -23,37 +23,6 @@ interface IEqualizerRouter {
         uint deadline
     ) external returns (uint amountA, uint amountB, uint liquidity);
 
-    function addLiquidityETH(
-        address token,
-        bool stable, 
-        uint amountTokenDesired,
-        uint amountTokenMin,
-        uint amountETHMin,
-        address to,
-        uint deadline
-    ) external payable returns (uint amountToken, uint amountETH, uint liquidity);
-
-    function removeLiquidity(
-        address tokenA,
-        address tokenB,
-        bool stable, 
-        uint liquidity,
-        uint amountAMin,
-        uint amountBMin,
-        address to,
-        uint deadline
-    ) external returns (uint amountA, uint amountB);
-
-    function removeLiquidityETH(
-        address token,
-        bool stable,
-        uint liquidity,
-        uint amountTokenMin,
-        uint amountETHMin,
-        address to,
-        uint deadline
-    ) external returns (uint amountToken, uint amountETH);
-
     function swapExactTokensForTokensSimple(
         uint amountIn, 
         uint amountOutMin, 
@@ -79,15 +48,4 @@ interface IEqualizerRouter {
         address to,
         uint deadline
     ) external;
-
-    function getAmountOut(uint amountIn, address tokenIn, address tokenOut) external view returns (uint amount, bool stable);
-    function getAmountsOut(uint amountIn, Routes[] memory routes) external view returns (uint[] memory amounts);
-   
-    function quoteAddLiquidity(
-        address tokenA,
-        address tokenB,
-        bool stable,
-        uint amountADesired,
-        uint amountBDesired
-    ) external view returns (uint amountA, uint amountB, uint liquidity);
 }

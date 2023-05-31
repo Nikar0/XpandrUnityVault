@@ -340,10 +340,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     //Guards against sandwich attacks
     function slippage(uint _amount) internal view returns(uint minAmt1, uint minAmt2){
-        uint[] memory t1Amts = IEqualizerPair(slippageLPs[0]).sample(slippageTokens[0], _amount, 3, 1);
+        uint[] memory t1Amts = IEqualizerPair(slippageLPs[0]).sample(slippageTokens[0], _amount, 2, 1);
         minAmt1 = (t1Amts[0] + t1Amts[1]) / 2;
 
-        uint[] memory t2Amts = IEqualizerPair(slippageLPs[1]).sample(slippageTokens[1], minAmt1, 3, 1);
+        uint[] memory t2Amts = IEqualizerPair(slippageLPs[1]).sample(slippageTokens[1], minAmt1, 2, 1);
         minAmt1 = minAmt1 - (minAmt1 *  percent / 100);
 
         minAmt2 = (t2Amts[0] + t2Amts[1]) / 2;

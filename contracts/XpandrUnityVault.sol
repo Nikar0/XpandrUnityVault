@@ -340,13 +340,13 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     //Guards against sandwich attacks
     function slippage(uint _amount) internal view returns(uint minAmt1, uint minAmt2){
-        uint[] memory t1Amts = IEqualizerPair(slippageLPs[0]).sample(slippageTokens[0], _amount, 3, 2);
-        minAmt1 = (t1Amts[0] + t1Amts[1] + t1Amts[2]) / 3;
+        uint[] memory t1Amts = IEqualizerPair(slippageLPs[0]).sample(slippageTokens[0], _amount, 3, 1);
+        minAmt1 = (t1Amts[0] + t1Amts[1]) / 2;
 
-        uint[] memory t2Amts = IEqualizerPair(slippageLPs[1]).sample(slippageTokens[1], minAmt1, 3, 2);
+        uint[] memory t2Amts = IEqualizerPair(slippageLPs[1]).sample(slippageTokens[1], minAmt1, 3, 1);
         minAmt1 = minAmt1 - (minAmt1 *  percent / 100);
 
-        minAmt2 = (t2Amts[0] + t2Amts[1] + t2Amts[2]) / 3;
+        minAmt2 = (t2Amts[0] + t2Amts[1]) / 2;
         minAmt2 = minAmt2 - (minAmt2 * percent / 100);
     }
 
@@ -433,6 +433,16 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         SafeTransferLib.safeApprove(_token, router, 0);
         SafeTransferLib.safeApprove(_token, router, type(uint).max);
         IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, _path, address(this), _timestamp());
+    }
+
+    //Rescues random funds stuck that the vault can't handle.
+    function stuckTokens(address _token, uint _amount) external onlyOwner {
+        if(ERC20(_token) == asset){revert XpandrErrors.InvalidTokenOrPath();}
+        uint amount;
+
+        if(_amount == 0){amount = ERC20(_token).balanceOf(address(this));}  else {amount = _amount;}
+        SafeTransferLib.safeTransfer(_token, msg.sender, amount);
+        emit StuckTokens(msg.sender, amount, _token);
     }
 
     function _subAllowance() internal {

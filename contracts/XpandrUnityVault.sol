@@ -356,7 +356,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     } 
 
     function setSlippageSetDelay(uint8 _slippage, uint64 _delay) external onlyAdmin{
-        if(_delay > 1800 || _delay < 600) {revert XpandrErrors.InvalidDelay();}
+        if(_delay > 1800 || _delay < 600) {revert XpandrErrors.OverCap();}
         if(_slippage > 5 || _slippage < 1){revert XpandrErrors.OverCap();}
 
         if(_delay != delay){delay = _delay;}

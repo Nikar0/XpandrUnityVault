@@ -9,7 +9,6 @@ contract XpandrErrors {
     error NotAccountOwner();
     error OverCap();
     error UnderTimeLock();
-    error InvalidDelay();
     error InvalidProposal();
     error InvalidTokenOrPath();
 }

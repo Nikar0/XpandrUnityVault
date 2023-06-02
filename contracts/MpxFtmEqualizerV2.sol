@@ -77,7 +77,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     uint64 internal delay;
     uint8 internal harvestOnDeposit;
     uint8 internal slippage;
-
+    uint8 internal constant slippageDiv = 100;
 
     constructor(
         address _asset,
@@ -128,6 +128,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     }
 
     function harvest() external {
+        lastHarvest = _timestamp();
         if(msg.sender != tx.origin){revert XpandrErrors.NotEOA();}
         if(_timestamp() < lastHarvest + delay){revert XpandrErrors.UnderTimeLock();}
         _harvest(msg.sender);
@@ -187,7 +188,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         uint t1Bal = SafeTransferLib.balanceOf(wftm, address(this));
         uint t2Bal = SafeTransferLib.balanceOf(mpx, address(this));
         (uint t1Min, uint t2Min,) = IEqualizerRouter(router).quoteAddLiquidity(wftm, mpx, false, t1Bal, t2Bal);
-        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, t1Min * slippage / 100, t2Min * slippage / 100, address(this), lastHarvest);
+        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, t1Min * slippage / slippageDiv, t2Min * slippage / slippageDiv, address(this), lastHarvest);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -273,7 +274,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     function getSlippage(uint _amount, address _lp, address _token) internal view returns(uint minAmt){
         uint[] memory t1Amts = IEqualizerPair(_lp).sample(_token, _amount, 2, 1);
         minAmt = (t1Amts[0] + t1Amts[1] ) / 2;
-        minAmt = minAmt - (minAmt *  slippage / 100);
+        minAmt = minAmt - (minAmt *  slippage / slippageDiv);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -316,7 +317,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     } 
 
     function setSlippageSetDelay(uint8 _slippage, uint64 _delay) external onlyAdmin{
-        if(_delay > 1800 || _delay < 600) {revert XpandrErrors.InvalidDelay();}
+        if(_delay > 1800 || _delay < 600) {revert XpandrErrors.OverCap();}
         if(_slippage > 5 || _slippage < 1){revert XpandrErrors.OverCap();}
 
         if(_delay != delay){delay = _delay;}

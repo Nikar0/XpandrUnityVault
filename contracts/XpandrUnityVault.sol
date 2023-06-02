@@ -45,7 +45,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
     
     event Harvest(address indexed harvester);
-    event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
+    event RouterSetGaugeSet(address indexed newRouter, address indexed newGauge);
     event Panic(address indexed caller);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
     event SlippageSetDelaySet(uint8 slippage, uint64 delay);
@@ -315,7 +315,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     //Guards against timestamp spoofing
     function _timestamp() internal view returns (uint64 timestamp){
-        (,,uint lastBlock) = IEqualizerPair(slippageLPs[2]).getReserves();
+        uint lastBlock = IEqualizerPair(slippageLPs[2]).blockTimestampLast();
         timestamp = uint64(lastBlock + 300);
     }
 
@@ -343,11 +343,11 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         emit SetFeesAndRecipient(withdrawFee, sum, feeRecipient);
     }
 
-    function setRouterOrGauge(address _router, address _gauge) external onlyOwner {
+    function setRouterSetGauge(address _router, address _gauge) external onlyOwner {
         if(_router == address(0) || _gauge == address(0)){revert XpandrErrors.ZeroAddress();}
         if(_router != router){router = _router;}
         if(_gauge != gauge){gauge = _gauge;}
-        emit SetRouterOrGauge(router, gauge);
+        emit RouterSetGaugeSet(router, gauge);
     }
 
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {

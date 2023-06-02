@@ -307,7 +307,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
     //Guards against timestamp spoofing
     function _timestamp() internal view returns (uint64 timestamp){
-        (,,uint lastBlock) = IEqualizerPair(slippageLPs[2]).getReserves();
+        uint lastBlock = IEqualizerPair(slippageLPs[2]).blockTimestampLast();
         timestamp = uint64(lastBlock + 300);
     }
 

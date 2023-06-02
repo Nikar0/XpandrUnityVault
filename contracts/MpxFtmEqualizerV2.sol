@@ -20,7 +20,7 @@ pragma solidity ^0.8.19;
 
 import {Pauser} from "./interfaces/Pauser.sol";
 import {ERC20} from "./interfaces/solmate/ERC20.sol";
-import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
+import {SafeTransferLib} from "./interfaces/solady/SafeTransferLib.sol";
 import {AccessControl} from "./interfaces/AccessControl.sol";
 import {IEqualizerPair} from "./interfaces/IEqualizerPair.sol";
 import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
@@ -28,32 +28,28 @@ import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
 
 contract MpxFtmEqualizerV2 is AccessControl, Pauser {
-    using SafeTransferLib for ERC20;
-
+   
     /*//////////////////////////////////////////////////////////////
                           VARIABLES & EVENTS
     //////////////////////////////////////////////////////////////*/
 
     event Harvest(address indexed harvester);
     event SetVault(address indexed newVault);
-    event SetRouterOrGauge(address indexed router, address indexed gauge);
-    event SetFeeToken(address indexed newFeeToken);
-    event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
+    event RouterSetGaugeSet(address indexed router, address indexed gauge);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
+    event SlippageSetDelaySet(uint8 slippage, uint64 delay);
+    event HarvestOnDepositSet(uint8 harvestOnDeposit);
     event RemoveStrat(address indexed caller);
-    event SetDelay(uint64 delay);
     event Panic(address indexed caller);
     event CustomTx(address indexed from, uint indexed amount);
 
     // Tokens
-    address public constant wftm = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
-    address public constant equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
-    address public constant mpx = address(0x66eEd5FF1701E6ed8470DC391F05e27B1d0657eb);
+    address internal constant wftm = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
+    address internal constant equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
+    address internal constant mpx = address(0x66eEd5FF1701E6ed8470DC391F05e27B1d0657eb);
     address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit denominator
     address public asset;
-    address internal feeToken;
     address[] public rewardTokens;
-    address[2] internal slippageTokens;
     address[3] internal slippageLPs;
 
     // Third party contracts
@@ -65,13 +61,8 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     address public feeRecipient;
     address public vault; 
 
-    // Paths
-    IEqualizerRouter.Routes[] public equalToWftmPath;
-    IEqualizerRouter.Routes[] public equalToMpxPath;
-    IEqualizerRouter.Routes[] public customPath;
-
     // Fee Structure
-    uint64 public constant FEE_DIVISOR = 1000;
+    uint64 internal constant FEE_DIVISOR = 1000;
     uint64 public platformFee = 35;                         // 3.5% Platform fee max cap
     uint64 public withdrawFee;                             // 0% withdraw fee. Kept in case of economic attacks, can only be set to 0 or 0.1%
     uint64 public treasuryFee = 590;
@@ -83,34 +74,23 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     uint64 internal lastHarvest;
     uint64 internal harvestProfit;
     uint64 internal delay;
-    uint8 public harvestOnDeposit;
+    uint8 internal harvestOnDeposit;
+    uint8 internal slippage;
 
 
     constructor(
         address _asset,
         address _gauge,
         address _router,
-        address _feeToken,
-        address _strategist,
-        IEqualizerRouter.Routes[] memory _equalToWftmPath,
-        IEqualizerRouter.Routes[] memory _equalToMpxPath
+        address _strategist
     ) {
         asset = _asset;
         gauge = _gauge;
         router = _router;
-        feeToken = _feeToken;
         strategist = _strategist;
         emit SetStrategist(address(0), _strategist);
 
-        for (uint i; i < _equalToWftmPath.length; ++i) {
-            equalToWftmPath.push(_equalToWftmPath[i]);
-        }
-
-        for (uint i; i < _equalToMpxPath.length; ++i) {
-            equalToMpxPath.push(_equalToMpxPath[i]);
-        }
-        slippageTokens = [equal, wftm];
-        slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(asset), address(0x76fa7935a5AFEf7fefF1C88bA858808133058908)];
+        slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(asset), address(0x7547d05dFf1DA6B4A2eBB3f0833aFE3C62ABD9a1)];
         rewardTokens.push(equal);
         lastHarvest = uint64(block.timestamp);
         delay = 600; // 10 mins
@@ -121,22 +101,20 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
                           DEPOSIT/WITHDRAW
     //////////////////////////////////////////////////////////////*/
 
-
-
     function deposit() public whenNotPaused {
         if(msg.sender != vault){revert XpandrErrors.NotVault();}
         harvestProfit = 0;
-        uint assetBal = ERC20(asset).balanceOf(address(this));
+        uint assetBal = SafeTransferLib.balanceOf(asset, address(this));
         IEqualizerGauge(gauge).deposit(assetBal);
     }
 
     function withdraw(uint _amount) external {
         if(msg.sender != vault){revert XpandrErrors.NotVault();}
-        uint assetBal = ERC20(asset).balanceOf(address(this));
+        uint assetBal = SafeTransferLib.balanceOf(asset, address(this));
 
         if (assetBal < _amount) {
             IEqualizerGauge(gauge).withdraw(_amount - assetBal);
-            assetBal = ERC20(asset).balanceOf(address(this));             
+            assetBal = SafeTransferLib.balanceOf(asset, address(this));             
         }
 
         if (assetBal > _amount) {
@@ -144,8 +122,8 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         }
         if(withdrawFee != 0){
             uint withdrawalFeeAmount = assetBal * withdrawFee / FEE_DIVISOR; 
-            ERC20(asset).safeTransfer(vault, assetBal - withdrawalFeeAmount);
-        } else {ERC20(asset).safeTransfer(vault, assetBal);}
+            SafeTransferLib.safeTransfer(asset, vault, assetBal - withdrawalFeeAmount);
+        } else {SafeTransferLib.safeTransfer(asset, vault, assetBal);}
     }
 
     function harvest() external {
@@ -161,11 +139,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         emit Harvest(caller);
 
         IEqualizerGauge(gauge).getReward(address(this), rewardTokens);
-        uint rewardBal = ERC20(equal).balanceOf(address(this));
-
-        uint toProfit = rewardBal - (rewardBal * platformFee / FEE_DIVISOR);
-        uint profitBal = IEqualizerPair(slippageLPs[2]).sample(equal, toProfit, 1, 1)[0];
-        harvestProfit = harvestProfit + uint64(profitBal * 1e6 / 1e12);
+        uint rewardBal = SafeTransferLib.balanceOf(equal, address(this));
 
         if (rewardBal != 0 ) {
             _chargeFees(caller);
@@ -179,35 +153,38 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
 
     function _chargeFees(address caller) internal {                   
-        uint toFee = ERC20(equal).balanceOf(address(this)) * platformFee / FEE_DIVISOR;
-        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), lastHarvest);
-    
-        uint feeBal = ERC20(feeToken).balanceOf(address(this));
+        uint equalBal = SafeTransferLib.balanceOf(equal, address(this));
+        uint minAmt = getSlippage(equalBal, slippageLPs[0], equal);
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(equalBal, minAmt, equal, wftm, false, address(this), lastHarvest);
+        
+        uint feeBal = SafeTransferLib.balanceOf(wftm, address(this)) * platformFee / FEE_DIVISOR;
+        uint toProfit = SafeTransferLib.balanceOf(wftm, address(this)) - feeBal;
+
+        uint usdProfit = IEqualizerPair(slippageLPs[2]).sample(wftm, toProfit, 1, 1)[0];
+        harvestProfit = harvestProfit + uint64(usdProfit);
 
         uint callAmt = feeBal * callFee / FEE_DIVISOR;
-        ERC20(feeToken).transfer(caller, callAmt);
+        SafeTransferLib.safeTransfer(wftm, caller, callAmt);
 
         if(recipientFee != 0){
         uint recipientAmt = feeBal * recipientFee / FEE_DIVISOR;
-        ERC20(feeToken).safeTransfer(feeRecipient, recipientAmt);
+        SafeTransferLib.safeTransfer(wftm, feeRecipient, recipientAmt);
         }
 
         uint treasuryAmt = feeBal * treasuryFee / FEE_DIVISOR;
-        ERC20(feeToken).transfer(treasury, treasuryAmt);
+        SafeTransferLib.safeTransfer(wftm, treasury, treasuryAmt);
                                                 
         uint stratAmt = feeBal * stratFee / FEE_DIVISOR;
-        ERC20(feeToken).transfer(strategist, stratAmt);
+        SafeTransferLib.safeTransfer(wftm, strategist, stratAmt);
     }
 
     function _addLiquidity() internal {
-        uint equalHalf = ERC20(equal).balanceOf(address(this)) >> 1;
-        (uint minAmt1, uint minAmt2) = slippage(equalHalf);
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt1, equalToWftmPath, address(this), lastHarvest);
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt2, equalToMpxPath, address(this), lastHarvest);
+        uint wftmHalf = SafeTransferLib.balanceOf(wftm, address(this)) >> 1;
+        (uint minAmt) = getSlippage(wftmHalf, address(asset), wftm);
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(wftmHalf, minAmt, wftm, mpx, false, address(this), lastHarvest);
 
-        uint t1Bal = ERC20(wftm).balanceOf(address(this));
-        uint t2Bal = ERC20(mpx).balanceOf(address(this));
-
+        uint t1Bal = SafeTransferLib.balanceOf(wftm, address(this));
+        uint t2Bal = SafeTransferLib.balanceOf(mpx, address(this));
         IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), lastHarvest);
     }
 
@@ -216,8 +193,8 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
 
     //Determines the amount of reward in native upon calling the harvest function
-    function callReward() public view returns (uint) {
-        uint outputBal = rewardBalance();
+    function callReward() external view returns (uint) {
+        uint outputBal = IEqualizerGauge(gauge).earned(equal, address(this));
         uint wrappedOut;
         if (outputBal != 0) {
             (wrappedOut,) = IEqualizerRouter(router).getAmountOut(outputBal, equal, wftm);
@@ -226,7 +203,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     }
 
     //Returns rewards unharvested
-    function rewardBalance() public view returns (uint) {
+    function rewardBalance() external view returns (uint) {
         return IEqualizerGauge(gauge).earned(equal, address(this));
     }
 
@@ -246,11 +223,11 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     }
 
     function harvestProfits() external view returns (uint64){
-        return harvestProfit;
+        return harvestProfit / 1e6;
     }
 
-    function getDelay() external view returns(uint64){
-        return delay;
+    function getSlippageGetDelay() external view returns (uint8 percentage, uint64 buffer){
+        return (slippage, delay);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -287,20 +264,14 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
 
     //Guards against timestamp spoofing
     function _timestamp() internal view returns (uint64 timestamp){
-        (,,uint lastBlock) = (IEqualizerPair(address(asset)).getReserves());
-        timestamp = uint64(lastBlock + 600);
+        uint lastBlock = IEqualizerPair(slippageLPs[2]).blockTimestampLast();
+        timestamp = uint64(lastBlock + 300);
     }
 
-    //Guards against sandwich attacks
-    function slippage(uint _amount) internal view returns(uint minAmt1, uint minAmt2){
-        uint[] memory t1Amts = IEqualizerPair(slippageLPs[0]).sample(slippageTokens[0], _amount, 3, 2);
-        minAmt1 = (t1Amts[0] + t1Amts[1] + t1Amts[2]) / 3;
-
-        uint[] memory t2Amts = IEqualizerPair(slippageLPs[1]).sample(slippageTokens[1], minAmt1, 3, 2);
-        minAmt1 = minAmt1 - (minAmt1 *  2 / 100);
-
-        minAmt2 = (t2Amts[0] + t2Amts[1] + t2Amts[2]) / 3;
-        minAmt2 = minAmt2 - (minAmt2 * 2 / 100);
+    function getSlippage(uint _amount, address _lp, address _token) internal view returns(uint minAmt){
+        uint[] memory t1Amts = IEqualizerPair(_lp).sample(_token, _amount, 2, 1);
+        minAmt = (t1Amts[0] + t1Amts[1] ) / 2;
+        minAmt = minAmt - (minAmt *  slippage / 100);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -320,7 +291,6 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         withdrawFee = _withdrawFee;
         treasuryFee = _treasuryFee;
         recipientFee = _recipientFee;
-
         emit SetFeesAndRecipient(_withdrawFee, sum, feeRecipient);
     }
 
@@ -334,40 +304,22 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         if(_router == address(0) || _gauge == address(0)){revert XpandrErrors.ZeroAddress();}
         if(_router != router){router = _router;}
         if(_gauge != gauge){gauge = _gauge;}
-        emit SetRouterOrGauge(router, gauge);
-    }
-
-    function setPaths(IEqualizerRouter.Routes[] memory _equalToMpx, IEqualizerRouter.Routes[] memory _equalToWftm) external onlyAdmin{
-        if(_equalToMpx.length != 0){
-            for (uint i; i < _equalToMpx.length; ++i) {
-            equalToMpxPath.push(_equalToMpx[i]);
-            }
-        }
-        if(_equalToWftm.length != 0){
-            for (uint i; i < _equalToWftm.length; ++i) {
-            equalToWftmPath.push(_equalToWftm[i]);
-            }
-        }
-        emit SetPaths(equalToMpxPath, equalToWftmPath);
-    }
-
-    function setFeeToken(address _feeToken) external onlyAdmin {
-       if(_feeToken == address(0) || _feeToken == feeToken){revert XpandrErrors.InvalidTokenOrPath();}
-       feeToken = _feeToken;
-       emit SetFeeToken(_feeToken);
-
-       ERC20(_feeToken).safeApprove(router, 0);
-       ERC20(_feeToken).safeApprove(router, type(uint).max);
+        emit RouterSetGaugeSet(router, gauge);
     }
 
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
         if(_harvestOnDeposit != 0 || _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
+        emit HarvestOnDepositSet(harvestOnDeposit);
     } 
 
-    function setDelay(uint64 _delay) external onlyAdmin{
+    function setSlippageSetDelay(uint8 _slippage, uint64 _delay) external onlyAdmin{
         if(_delay > 1800 || _delay < 600) {revert XpandrErrors.InvalidDelay();}
-        delay = _delay;
+        if(_slippage > 5 || _slippage < 1){revert XpandrErrors.OverCap();}
+
+        if(_delay != delay){delay = _delay;}
+        if(_slippage != slippage){slippage = _slippage;}
+        emit SlippageSetDelaySet(slippage, delay);
     }
     
     /*//////////////////////////////////////////////////////////////
@@ -379,30 +331,27 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
         if(_token == equal || _token == wftm || _token == mpx){revert XpandrErrors.InvalidTokenOrPath();}
         uint bal;
-        if(_amount == 0) {bal = ERC20(_token).balanceOf(address(this));}
+        if(_amount == 0) {bal = SafeTransferLib.balanceOf(_token, address(this));}
         else {bal = _amount;}
+        emit CustomTx(_token, bal);
 
-        for (uint i; i < _path.length; ++i) {
-            customPath.push(_path[i]);
-        }
-
-        ERC20(_token).safeApprove(router, 0);
-        ERC20(_token).safeApprove(router, type(uint).max);
-        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, customPath, address(this), _timestamp());   
+        SafeTransferLib.safeApprove(_token, router, 0);
+        SafeTransferLib.safeApprove(_token, router, type(uint).max);
+        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, _path, address(this), _timestamp());   
     }
 
     function _subAllowance() internal {
-        ERC20(asset).safeApprove(gauge, 0);
-        ERC20(equal).safeApprove(router, 0);
-        ERC20(wftm).safeApprove(router, 0);
-        ERC20(mpx).safeApprove(router, 0);
+        SafeTransferLib.safeApprove(asset, gauge, 0);
+        SafeTransferLib.safeApprove(equal, router, 0);
+        SafeTransferLib.safeApprove(wftm, router, 0);
+        SafeTransferLib.safeApprove(mpx, router, 0);
     }
 
     function _addAllowance() internal {
-        ERC20(asset).safeApprove(gauge, type(uint).max);
-        ERC20(equal).safeApprove(router, type(uint).max);
-        ERC20(wftm).safeApprove(router, type(uint).max);
-        ERC20(mpx).safeApprove(router, type(uint).max);
+        SafeTransferLib.safeApprove(asset, gauge, type(uint).max);
+        SafeTransferLib.safeApprove(equal, router, type(uint).max);
+        SafeTransferLib.safeApprove(wftm, router, type(uint).max);
+        SafeTransferLib.safeApprove(mpx, router, type(uint).max);
     }
 
     //Called by vault if harvestOnDeposit = 1

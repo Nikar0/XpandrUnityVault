@@ -24,7 +24,7 @@ Special thanks to 543 from Equalizer/Guru_Network for the brainstorming & QA
 pragma solidity ^0.8.19;
 
 import {ERC20, ERC4626, FixedPointMathLib} from "./interfaces/solmate/ERC4626light.sol";
-import {SafeTransferLib} from "./interfaces/solmate/SafeTransferLib.sol";
+import {SafeTransferLib} from "./interfaces/solady/SafeTransferLib.sol";
 import {IEqualizerPair} from "./interfaces/IEqualizerPair.sol";
 import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
 import {AccessControl} from "./interfaces/AccessControl.sol";
@@ -36,7 +36,6 @@ This is the contract that receives funds & users interface with
 The strategy itself is implemented in a separate Strategy contract
  */
 contract Xpandr4626 is ERC4626, AccessControl {
-    using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint;
 
     /*//////////////////////////////////////////////////////////////
@@ -78,22 +77,22 @@ contract Xpandr4626 is ERC4626, AccessControl {
     //////////////////////////////////////////////////////////////*/
 
     function depositAll() external {
-        deposit(asset.balanceOf(msg.sender), msg.sender);
+        deposit(SafeTransferLib.balanceOf(address(asset), msg.sender), msg.sender);
     }
 
     //Entrypoint of funds into the system. The vault then deposits funds into the strategy.  
     function deposit(uint assets, address receiver) public override  returns (uint shares) {
         if(tx.origin != receiver){revert XpandrErrors.NotAccountOwner();}
         if(lastUserDeposit[receiver] != 0) {if(_timestamp() < lastUserDeposit[receiver] + strategy.getDelay()) {revert XpandrErrors.UnderTimeLock();}}
-        if(assets > asset.balanceOf(receiver)){revert XpandrErrors.OverCap();}
+        if(assets > SafeTransferLib.balanceOf(address(asset), receiver)){revert XpandrErrors.OverCap();}
         shares = convertToShares(assets);
         if(shares == 0 || assets == 0){revert XpandrErrors.ZeroAmount();}
 
         lastUserDeposit[receiver] = _timestamp();
         emit Deposit(receiver, receiver, assets, shares);
-        vaultProfit = vaultProfit + strategy.harvestProfit();
+        vaultProfit = vaultProfit + strategy.harvestProfits();
 
-        asset.safeTransferFrom(msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
+        SafeTransferLib.safeTransferFrom(address(asset), msg.sender, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
         _mint(receiver, shares);
         _earn();
 
@@ -103,13 +102,13 @@ contract Xpandr4626 is ERC4626, AccessControl {
     //Function to send funds into the strategy then deposits in the farm.
     //It's primarily called by the vault's deposit() function.
     function _earn() internal {
-        uint bal = asset.balanceOf(address(this));
-        asset.safeTransfer(address(strategy), bal);
+        uint bal = SafeTransferLib.balanceOf(address(asset), address(this));
+        SafeTransferLib.safeTransfer(address(asset), address(strategy), bal);
         strategy.deposit();
     }
 
     function withdrawAll() external {
-        withdraw(asset.balanceOf(msg.sender), msg.sender, msg.sender);
+        withdraw(SafeTransferLib.balanceOf(address(asset), msg.sender), msg.sender, msg.sender);
     }
 
     /**
@@ -120,7 +119,7 @@ contract Xpandr4626 is ERC4626, AccessControl {
 
     function withdraw(uint shares, address receiver, address _owner) public override returns (uint assets) {
         if(tx.origin != receiver && tx.origin != _owner){revert XpandrErrors.NotAccountOwner();}
-        if(shares > ERC20(address(this)).balanceOf(_owner)){revert XpandrErrors.OverCap();}
+        if(shares > SafeTransferLib.balanceOf(address(this), _owner)){revert XpandrErrors.OverCap();}
         assets = convertToAssets(shares);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
        
@@ -128,13 +127,13 @@ contract Xpandr4626 is ERC4626, AccessControl {
         emit Withdraw(_owner, receiver, _owner, assets, shares);
 
         strategy.withdraw(assets);
-        asset.safeTransfer(receiver, assets);
+        SafeTransferLib.safeTransfer(address(asset), receiver, assets);
 
     }
 
     //Guards against timestamp spoofing
     function _timestamp() internal view returns (uint64 timestamp){
-        (,,uint lastBlock) = (IEqualizerPair(address(asset)).getReserves());
+        uint lastBlock = (IEqualizerPair(address(asset)).blockTimestampLast());
         timestamp = uint64(lastBlock + 600);
     }
 
@@ -144,7 +143,7 @@ contract Xpandr4626 is ERC4626, AccessControl {
 
     //Returns idle funds in the vault
     function idleFunds() public view returns (uint) {
-        return asset.balanceOf(address(this));
+        return SafeTransferLib.balanceOf(address(asset), address(this));
     }
 
     //Function for UIs to display the current value of 1 vault share
@@ -155,7 +154,7 @@ contract Xpandr4626 is ERC4626, AccessControl {
     //Calculates total amount of 'asset' held by the system. Vault, strategy and contracts it deposits in.
     
     function totalAssets() public view override returns (uint) {
-        return asset.balanceOf(address(this)) + IStrategy(strategy).balanceOf();
+        return SafeTransferLib.balanceOf(address(asset), address(this)) + IStrategy(strategy).balanceOf();
     }
 
     function convertToShares(uint256 assets) public view override returns (uint256) {
@@ -202,14 +201,13 @@ contract Xpandr4626 is ERC4626, AccessControl {
         _earn();
     }
 
-    //Rescues random funds stuck that the strat can't handle.
-    function stuckTokens(address _token) external onlyAdmin {
+    //Rescues random funds stuck that the vault can't handle.
+    function stuckTokens(address _token, uint _amount) external onlyOwner {
         if(ERC20(_token) == asset){revert XpandrErrors.InvalidTokenOrPath();}
-
-        uint amount = ERC20(_token).balanceOf(address(this));
-        ERC20(_token).safeTransfer(msg.sender, amount);
-
+        uint amount;
+        if(_amount == 0){amount = SafeTransferLib.balanceOf(_token, address(this));}  else {amount = _amount;}
         emit StuckTokens(msg.sender, amount, _token);
+        SafeTransferLib.safeTransfer(_token, msg.sender, amount);
     }
 
 }

@@ -48,7 +48,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     event RouterSetGaugeSet(address indexed newRouter, address indexed newGauge);
     event Panic(address indexed caller);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
-    event SlippageSetDelaySet(uint8 slippage, uint64 delay);
+    event SetSlippageSetDelaySet(uint8 slippage, uint64 delay);
     event CustomTx(address indexed from, uint indexed amount);
     event StuckTokens(address indexed caller, uint indexed amount, address indexed token);
     
@@ -286,9 +286,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         return vaultProfit / 1e6;
     }
 
-    function getPercentGetDelay() external view returns (uint8 percentage, uint64 buffer){
-        return (percentage, delay);
-
+    function getSlippageGetDelay() external view returns (uint8 _slippage, uint64 buffer){
+        return (slippage, delay);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -361,7 +360,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
         if(_delay != delay){delay = _delay;}
         if(_slippage != slippage){slippage = _slippage;}
-        emit SlippageSetDelaySet(slippage, delay);
+        emit SetSlippageSetDelaySet(slippage, delay);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -386,10 +385,9 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     function stuckTokens(address _token, uint _amount) external onlyOwner {
         if(ERC20(_token) == asset){revert XpandrErrors.InvalidTokenOrPath();}
         uint amount;
-
-        if(_amount == 0){amount = ERC20(_token).balanceOf(address(this));}  else {amount = _amount;}
-        SafeTransferLib.safeTransfer(_token, msg.sender, amount);
+        if(_amount == 0){amount = SafeTransferLib.balanceOf(_token, address(this));}  else {amount = _amount;}
         emit StuckTokens(msg.sender, amount, _token);
+        SafeTransferLib.safeTransfer(_token, msg.sender, amount);
     }
 
     function _subAllowance() internal {

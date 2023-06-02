@@ -50,7 +50,8 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     event Harvest(address indexed harvester);
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
-    event SlippageSetDelaySet(uint8 slippage, uint64 delay);
+    event SetSlippageSetDelaySet(uint8 slippage, uint64 delay);
+    event HarvestOnDepositSet(uint8 harvestonDeposit);
     event Panic(address indexed caller);
     event CustomTx(address indexed from, uint indexed amount);
     event StuckTokens(address indexed caller, uint indexed amount, address indexed token);
@@ -155,7 +156,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         emit Withdraw(_owner, receiver, _owner, assets, shares);
         _collect(assets);
 
-        uint assetBal = asset.balanceOf(address(this));
+        uint assetBal = SafeTransferLib.balanceOf(address(asset), address(this));
         if (assetBal > assets) {assetBal = assets;}
 
         if(withdrawFee != 0){
@@ -191,7 +192,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
     // Deposits funds in the farm
     function _earn() internal {
-        uint assetBal = asset.balanceOf(address(this));
+        uint assetBal = SafeTransferLib.balanceOf(address(asset), address(this));
         IEqualizerGauge(gauge).deposit(assetBal);
     }
 
@@ -283,6 +284,10 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         return vaultProfit / 1e6;
     }
 
+    function getSlippageGetDelay() external view returns (uint8 _slippage, uint64 buffer){
+        return (slippage, delay);
+    }
+
     /*//////////////////////////////////////////////////////////////
                               SECURITY
     //////////////////////////////////////////////////////////////*/
@@ -344,6 +349,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
         if(_harvestOnDeposit != 0 && _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
+        emit HarvestOnDepositSet(harvestOnDeposit);
     } 
 
     function setSlippageSetDelay(uint8 _slippage, uint64 _delay) external onlyAdmin{
@@ -352,7 +358,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
         if(_delay != delay){delay = _delay;}
         if(_slippage != slippage){slippage = _slippage;}
-        emit SlippageSetDelaySet(slippage, delay);
+        emit SetSlippageSetDelaySet(slippage, delay);
     }
 
     /*//////////////////////////////////////////////////////////////

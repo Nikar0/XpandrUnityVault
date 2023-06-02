@@ -17,7 +17,7 @@ interface IStrategy {
     function unpause() external;
     function paused() external view returns (uint8);
     function harvestOnDeposit() external view returns(uint);
-    function harvestProfit() external view returns(uint64);
+    function harvestProfits() external view returns(uint64);
     function getDelay() external view returns(uint64);
 }
 

@@ -276,7 +276,7 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
     function convertToAssets(uint shares) public view override returns (uint) {
         uint supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
-        return supply == 0 ? shares : shares.mulDivDown(totalAssets(), supply);
+        return supply == 0 ? shares : shares.mulDivUp(totalAssets(), supply);
     }
 
     function vaultProfits() external view returns (uint64){

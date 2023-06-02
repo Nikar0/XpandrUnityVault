@@ -81,7 +81,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     uint64 internal vaultProfit;                            // Excludes performance fees
     uint64 internal delay;
     uint8 internal harvestOnDeposit; 
-    uint8 internal slippage;                                   
+    uint8 internal slippage;       
+    uint8 internal constant slippageDiv = 100;                            
     mapping(address => uint64) internal lastUserDeposit;    //Safeguard only allows same user deposits if > delay
 
     constructor(
@@ -230,7 +231,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
         uint t1Bal = SafeTransferLib.balanceOf(wftm, address(this));
         uint t2Bal = SafeTransferLib.balanceOf(mpx, address(this));
-        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), lastHarvest);
+        (uint t1Min, uint t2Min,) = IEqualizerRouter(router).quoteAddLiquidity(wftm, mpx, false, t1Bal, t2Bal);
+        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, t1Min * slippage / slippageDiv, t2Min * slippage / slippageDiv, address(this), lastHarvest);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -320,7 +322,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     function getSlippage(uint _amount, address _lp, address _token) internal view returns(uint minAmt){
         uint[] memory t1Amts = IEqualizerPair(_lp).sample(_token, _amount, 2, 1);
         minAmt = (t1Amts[0] + t1Amts[1] ) / 2;
-        minAmt = minAmt - (minAmt *  slippage / 100);
+        minAmt = minAmt - (minAmt *  slippage / slippageDiv);
     }
 
     /*//////////////////////////////////////////////////////////////

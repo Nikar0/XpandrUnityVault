@@ -186,7 +186,8 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
 
         uint t1Bal = SafeTransferLib.balanceOf(wftm, address(this));
         uint t2Bal = SafeTransferLib.balanceOf(mpx, address(this));
-        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, 1, 1, address(this), lastHarvest);
+        (uint t1Min, uint t2Min,) = IEqualizerRouter(router).quoteAddLiquidity(wftm, mpx, false, t1Bal, t2Bal);
+        IEqualizerRouter(router).addLiquidity(wftm, mpx, false, t1Bal, t2Bal, t1Min * slippage / 100, t2Min * slippage / 100, address(this), lastHarvest);
     }
 
     /*//////////////////////////////////////////////////////////////

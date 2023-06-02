@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: No License (None)
-// No permissions granted before Sunday, 5th May 2024, then GPL-3.0 after this date.
+// No permissions granted before June 1st 2025, then GPL-3.0 after this date.
 
 /** 
 @title  - Xpandr4626

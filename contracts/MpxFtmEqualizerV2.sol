@@ -1,19 +1,20 @@
 // SPDX-License-Identifier: No License (None)
-// No permissions granted before Sunday, 5th May 2024, then GPL-3.0 after this date.
+// No permissions granted before June 1st 2025, then GPL-3.0 after this date.
 
 /** 
-@title  - MpxFtmEqualizerV2
+@title  - MpxFtmEqualizer
 @author - Nikar0 
 @notice - Example Strategy to be used with Xpandr4626 Vault
-Includes: feeToken switch / 0% withdraw fee default / Feeds total profit to vault in USD / Harvest buffer/ Adjustable platform fee for promotional events w/ max cap.
+          Includes: 0% withdraw fee default / Feeds total profit to vault in USD / Harvest buffer / 
 
 https://www.github.com/nikar0/Xpandr4626
 
 Using solmate's gas optimized libs
 https://github.com/transmissions11/solmate
 
-@notice - AccessControl = modified solmate Owned.sol w/ added Strategist + error codes.
+Special thanks to 543 from Equalizer/Guru_Network for the brainstorming & QA
 
+@notice - AccessControl = modified solmate Owned.sol w/ added Strategist + error codes.
 */
 
 pragma solidity ^0.8.19;

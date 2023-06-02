@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: No License (None)
-// No permissions granted before Sunday, 5th May 2025, then GPL-3.0 after this date.
+// No permissions granted before June 1st 2025, then GPL-3.0 after this date.
 
 /** 
 @title  - XpandrUnityVault2
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
-          Includes: feeToken switch / 0% withdraw fee default / Total Vault profit in USD /
-          Deposit & harvest buffers / Timestamp & Slippage protection /
+          Includes: 0% withdraw fee default / Total Vault profit in USD / Deposit & harvest buffers / Timestamp & Slippage protection
 
 @notice - This version sends all fees to a contract instead of multiple txs to each receiving protocol address.
         - Less global variables/bytecode, cheaper harvest tx

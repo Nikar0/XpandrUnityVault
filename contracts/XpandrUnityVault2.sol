@@ -49,11 +49,8 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
     event Harvest(address indexed harvester);
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
-    event SetFeeToken(address indexed newFeeToken);
-    event SetPaths(IEqualizerRouter.Routes[] indexed path1, IEqualizerRouter.Routes[] indexed path2);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
-    event DelaySet(uint64 delay);
-    event SlippageSet(uint8 percent);
+    event SlippageSetDelaySet(uint8 slippage, uint64 delay);
     event Panic(address indexed caller);
     event CustomTx(address indexed from, uint indexed amount);
     event StuckTokens(address indexed caller, uint indexed amount, address indexed token);
@@ -65,7 +62,6 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     address internal constant usdc = address(0x04068DA6C83AFCFA0e13ba15A6696662335D5B75);  //vaultProfit denominator
     address internal feeToken;         //Switch for which token protocol receives fees in. In mind for Native & Stable but fits any Equal - X token swap.
     address[] internal rewardTokens;
-    address[2] internal slippageTokens;
     address[3] internal slippageLPs;
 
     // 3rd party contracts
@@ -75,35 +71,28 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     // Xpandr addresses
     address public xpandrRecipient;
 
-    // Paths
-    IEqualizerRouter.Routes[] public equalToWftmPath;
-    IEqualizerRouter.Routes[] public equalToMpxPath;
-
     // Fee Structure
-    uint64 public constant FEE_DIVISOR = 1000;               
+    uint64 internal constant FEE_DIVISOR = 1000;               
     uint64 public constant platformFee = 35;                 // 3.5% Platform fee cap
     uint64 public withdrawFee;                               // 0% withdraw fee. Logic kept in case spam/economic attacks bypass buffers, can only be set to 0 or 0.1%
-    uint64 public callFee = 120;
-    uint64 public xpandrFee = 880;
+    uint64 public callFee = 125;
+    uint64 public xpandrFee = 875;
 
     // Controllers
     uint64 internal delay;
     uint64 internal vaultProfit;                               // Excludes performance fees 
     uint64 internal lastHarvest;                             // Safeguard only allows harvest being called if > delay
     uint8 internal harvestOnDeposit;    
-    uint8 internal percent;                       
+    uint8 internal slippage;                       
     mapping(address => uint64) internal lastUserDeposit;     //Safeguard only allows same user deposits if > delay
 
     constructor(
         ERC20 _asset,
         address _gauge,
         address _router,
-        uint8 _percent,
-        address _feeToken,
+        uint8 _slippage,
         address _xpandrRecipient,
-        address _strategist,
-        IEqualizerRouter.Routes[] memory _equalToWftmPath,
-        IEqualizerRouter.Routes[] memory _equalToMpxPath
+        address _strategist
         )
        ERC4626(
             _asset,
@@ -113,24 +102,13 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         {
         gauge = _gauge;
         router = _router;
-        feeToken = _feeToken;
         xpandrRecipient = _xpandrRecipient;
         strategist = _strategist;
         emit SetStrategist(address(0), strategist);
         delay = 600; // 10 mins
-        percent = _percent;
+        slippage = _slippage;
 
-        for (uint i; i < _equalToWftmPath.length;) {
-            equalToWftmPath.push(_equalToWftmPath[i]);
-            unchecked{++i;}
-        }
-
-        for (uint i; i < _equalToMpxPath.length;) {
-            equalToMpxPath.push(_equalToMpxPath[i]);
-            unchecked{++i;}
-        }
-        slippageTokens = [equal, wftm];
-        slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(asset), address(0x76fa7935a5AFEf7fefF1C88bA858808133058908)];
+        slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(asset), address(0x7547d05dFf1DA6B4A2eBB3f0833aFE3C62ABD9a1)];
         rewardTokens.push(equal);
         lastHarvest = uint64(block.timestamp);
         _addAllowance();
@@ -226,28 +204,27 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
     }
 
     function _chargeFees(address caller) internal {                   
-        uint toFee = SafeTransferLib.balanceOf(address(equal), address(this)) * platformFee / FEE_DIVISOR;
-        uint toProfit = SafeTransferLib.balanceOf(address(equal), address(this)) - toFee;
+        uint equalBal = SafeTransferLib.balanceOf(equal, address(this));
+        uint minAmt = getSlippage(equalBal, slippageLPs[0], equal);
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(equalBal, minAmt, equal, wftm, false, address(this), lastHarvest);
+        
+        uint feeBal = SafeTransferLib.balanceOf(wftm, address(this)) * platformFee / FEE_DIVISOR;
+        uint toProfit = SafeTransferLib.balanceOf(wftm, address(this)) - feeBal;
 
-        uint usdProfit = IEqualizerPair(slippageLPs[2]).sample(equal, toProfit, 1, 1)[0];
+        uint usdProfit = IEqualizerPair(slippageLPs[2]).sample(wftm, toProfit, 1, 1)[0];
         vaultProfit = vaultProfit + uint64(usdProfit);
 
-        IEqualizerRouter(router).swapExactTokensForTokensSimple(toFee, 1, equal, feeToken, false, address(this), lastHarvest);
-
-        uint feeBal = SafeTransferLib.balanceOf(feeToken, address(this));
-
         uint callAmt = feeBal * callFee / FEE_DIVISOR;
-        SafeTransferLib.safeTransfer(feeToken, caller, callAmt);
+        SafeTransferLib.safeTransfer(wftm, caller, callAmt);
 
         uint xpandrAmt = feeBal * xpandrFee / FEE_DIVISOR;
-        SafeTransferLib.safeTransfer(feeToken, xpandrRecipient, xpandrAmt);
+        SafeTransferLib.safeTransfer(wftm, xpandrRecipient, xpandrAmt);
     }
 
     function _addLiquidity() internal {
-        uint equalHalf = SafeTransferLib.balanceOf(equal, address(this)) >> 1;
-        (uint minAmt1, uint minAmt2) = slippage(equalHalf);
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt1, equalToWftmPath, address(this), lastHarvest);
-        IEqualizerRouter(router).swapExactTokensForTokens(equalHalf, minAmt2, equalToMpxPath, address(this), lastHarvest);
+        uint wftmHalf = SafeTransferLib.balanceOf(wftm, address(this)) >> 1;
+        (uint minAmt) = getSlippage(wftmHalf, address(asset), wftm);
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(wftmHalf, minAmt, wftm, mpx, false, address(this), lastHarvest);
 
         uint t1Bal = SafeTransferLib.balanceOf(wftm, address(this));
         uint t2Bal = SafeTransferLib.balanceOf(mpx, address(this));
@@ -330,20 +307,14 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
 
     //Guards against timestamp spoofing
     function _timestamp() internal view returns (uint64 timestamp){
-        (,,uint lastBlock) = (IEqualizerPair(address(asset)).getReserves());
-        timestamp = uint64(lastBlock + 800);
+        (,,uint lastBlock) = IEqualizerPair(slippageLPs[2]).getReserves();
+        timestamp = uint64(lastBlock + 300);
     }
 
-    //Guards against sandwich attacks
-    function slippage(uint _amount) internal view returns(uint minAmt1, uint minAmt2){
-        uint[] memory t1Amts = IEqualizerPair(slippageLPs[0]).sample(slippageTokens[0], _amount, 3, 2);
-        minAmt1 = (t1Amts[0] + t1Amts[1] + t1Amts[2]) / 3;
-
-        uint[] memory t2Amts = IEqualizerPair(slippageLPs[1]).sample(slippageTokens[1], minAmt1, 3, 2);
-        minAmt1 = minAmt1 - (minAmt1 *  3 / 100);
-
-        minAmt2 = (t2Amts[0] + t2Amts[1] + t2Amts[2]) / 3;
-        minAmt2 = minAmt2 - (minAmt2 * 3 / 100);
+    function getSlippage(uint _amount, address _lp, address _token) internal view returns(uint minAmt){
+        uint[] memory t1Amts = IEqualizerPair(_lp).sample(_token, _amount, 2, 1);
+        minAmt = (t1Amts[0] + t1Amts[1] ) / 2;
+        minAmt = minAmt - (minAmt *  slippage / 100);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -369,49 +340,20 @@ contract XpandrUnityVault2 is ERC4626, AccessControl, Pauser {
         emit SetRouterOrGauge(router, gauge);
     }
 
-    function setPaths(IEqualizerRouter.Routes[] memory _equalToMpx, IEqualizerRouter.Routes[] memory _equalToWftm) external onlyOwner{
-        if(_equalToMpx.length != 0){
-            for (uint i; i < _equalToMpx.length;) {
-            equalToMpxPath.push(_equalToMpx[i]);
-            unchecked{++i;}
-            }
-        }
-        if(_equalToWftm.length != 0){
-            for (uint i; i < _equalToWftm.length;) {
-            equalToWftmPath.push(_equalToWftm[i]);
-            unchecked{++i;}
-            }
-        }
-        emit SetPaths(equalToMpxPath, equalToWftmPath);
-    }
-
-   function setFeeToken(address _feeToken) external onlyAdmin {
-       if(_feeToken == address(0) || _feeToken == feeToken){revert XpandrErrors.InvalidTokenOrPath();}
-       feeToken = _feeToken;
-       emit SetFeeToken(_feeToken);
-      
-       SafeTransferLib.safeApprove(feeToken, router, 0);
-       SafeTransferLib.safeApprove(feeToken, router, type(uint).max);
-    }
-
     // Sets harvestOnDeposit
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
         if(_harvestOnDeposit != 0 && _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
     } 
 
-    function setDelay(uint64 _delay) external onlyAdmin{
+    function setSlippageSetDelay(uint8 _slippage, uint64 _delay) external onlyAdmin{
         if(_delay > 1800 || _delay < 600) {revert XpandrErrors.InvalidDelay();}
-        delay = _delay;
-        emit DelaySet(delay);
-    }
+        if(_slippage > 5 || _slippage < 1){revert XpandrErrors.OverCap();}
 
-    function setSlippage(uint8 _percent) external onlyAdmin {
-        if(_percent > 10 || _percent < 1){revert XpandrErrors.OverCap();}
-        percent = _percent;
-        emit SlippageSet(percent);
+        if(_delay != delay){delay = _delay;}
+        if(_slippage != slippage){slippage = _slippage;}
+        emit SlippageSetDelaySet(slippage, delay);
     }
-
 
     /*//////////////////////////////////////////////////////////////
                                UTILS

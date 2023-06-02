@@ -48,8 +48,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     event SetRouterOrGauge(address indexed newRouter, address indexed newGauge);
     event Panic(address indexed caller);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
-    event DelaySet(uint64 delay);
-    event SlippageSet(uint8 percent);
+    event SlippageSetDelaySet(uint8 slippage, uint64 delay);
     event CustomTx(address indexed from, uint indexed amount);
     event StuckTokens(address indexed caller, uint indexed amount, address indexed token);
     
@@ -83,14 +82,14 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     uint64 internal vaultProfit;                            // Excludes performance fees
     uint64 internal delay;
     uint8 internal harvestOnDeposit; 
-    uint8 internal percent;                                   
+    uint8 internal slippage;                                   
     mapping(address => uint64) internal lastUserDeposit;    //Safeguard only allows same user deposits if > delay
 
     constructor(
         ERC20 _asset,
         address _gauge,
         address _router,
-        uint8 _percent,
+        uint8 _slippage,
         address _strategist
         )
        ERC4626(
@@ -104,9 +103,9 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         strategist = _strategist;
         emit SetStrategist(address(0), strategist);
         delay = 600; // 10 mins
-        percent = _percent;
+        slippage = _slippage;
 
-        slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(_asset), 0x7547d05dFf1DA6B4A2eBB3f0833aFE3C62ABD9a1];
+        slippageLPs = [address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122), address(_asset), address(0x7547d05dFf1DA6B4A2eBB3f0833aFE3C62ABD9a1)];
         rewardTokens.push(equal);
         lastHarvest = uint64(block.timestamp);
         _addAllowance();
@@ -201,7 +200,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     function _chargeFees(address caller) internal {                   
         uint equalBal = SafeTransferLib.balanceOf(equal, address(this));
-        uint minAmt = slippage(equalBal, slippageLPs[0], equal);
+        uint minAmt = getSlippage(equalBal, slippageLPs[0], equal);
         IEqualizerRouter(router).swapExactTokensForTokensSimple(equalBal, minAmt, equal, wftm, false, address(this), lastHarvest);
         
         uint feeBal = SafeTransferLib.balanceOf(wftm, address(this)) * platformFee / FEE_DIVISOR;
@@ -227,7 +226,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     function _addLiquidity() internal {
         uint wftmHalf = SafeTransferLib.balanceOf(wftm, address(this)) >> 1;
-        (uint minAmt) = slippage(wftmHalf, address(asset), wftm);
+        (uint minAmt) = getSlippage(wftmHalf, address(asset), wftm);
         IEqualizerRouter(router).swapExactTokensForTokensSimple(wftmHalf, minAmt, wftm, mpx, false, address(this), lastHarvest);
 
         uint t1Bal = SafeTransferLib.balanceOf(wftm, address(this));
@@ -320,10 +319,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         timestamp = uint64(lastBlock + 300);
     }
 
-    function slippage(uint _amount, address _lp, address _token) internal view returns(uint minAmt){
+    function getSlippage(uint _amount, address _lp, address _token) internal view returns(uint minAmt){
         uint[] memory t1Amts = IEqualizerPair(_lp).sample(_token, _amount, 2, 1);
         minAmt = (t1Amts[0] + t1Amts[1] ) / 2;
-        minAmt = minAmt - (minAmt *  percent / 100);
+        minAmt = minAmt - (minAmt *  slippage / 100);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -356,16 +355,13 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         harvestOnDeposit = _harvestOnDeposit;
     } 
 
-    function setDelay(uint64 _delay) external onlyAdmin{
+    function setSlippageSetDelay(uint8 _slippage, uint64 _delay) external onlyAdmin{
         if(_delay > 1800 || _delay < 600) {revert XpandrErrors.InvalidDelay();}
-        delay = _delay;
-        emit DelaySet(delay);
-    }
+        if(_slippage > 5 || _slippage < 1){revert XpandrErrors.OverCap();}
 
-    function setSlippage(uint8 _percent) external onlyAdmin {
-        if(_percent > 5 || _percent < 1){revert XpandrErrors.OverCap();}
-        percent = _percent;
-        emit SlippageSet(percent);
+        if(_delay != delay){delay = _delay;}
+        if(_slippage != slippage){slippage = _slippage;}
+        emit SlippageSetDelaySet(slippage, delay);
     }
 
     /*//////////////////////////////////////////////////////////////

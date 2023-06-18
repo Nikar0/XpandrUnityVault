@@ -58,7 +58,6 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     address public router;
 
     // Xpandr addresses
-    address public constant treasury = address(0xE37058057B0751bD2653fdeB27e8218439e0f726);
     address public feeRecipient;
     address public vault; 
 

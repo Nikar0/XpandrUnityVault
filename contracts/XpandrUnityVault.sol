@@ -64,7 +64,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     address public router;
 
     // Xpandr addresses
-    address public constant treasury = address(0xE37058057B0751bD2653fdeB27e8218439e0f726);
     address public feeRecipient;
 
     // Fee Structure
@@ -370,7 +369,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     This function exists for cases where a vault may receive sporadic 3rd party rewards such as airdrop from it's deposit in a farm.
     Enables convert that token into more of this vault's reward. */ 
-    function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyAdmin {
+    function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyOwner {
         if(_token == equal || _token == wftm || _token == mpx){revert XpandrErrors.InvalidTokenOrPath();}
         uint bal;
         if(_amount == 0) {bal = SafeTransferLib.balanceOf(_token, address(this));}

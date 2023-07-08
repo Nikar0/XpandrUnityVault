@@ -4,14 +4,17 @@
 /** 
 @title  - XpandrUnityTakeProfit
 @author - Nikar0 
-@notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
+@notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract. Sells reward to claimable USDC.
           Includes: 0% withdraw fee default / Vault profit in USD / Deposit & harvest buffers / Timestamp & Slippage protection
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 
 
-Vault based on EIP-4626 by @joey_santoro, @transmissions11, et all.
+Vault based on EIP-4626
 https://eips.ethereum.org/EIPS/eip-4626
+
+Take Profit embedded from @JaeTask Ninja Yielder vauls, with due permission.
+https://docs.yielder.ninja/assets/audits/20230112_TrustSecurityAudit_V3Vaults_v02_signed.pdf
 
 Using solmate libs for ERC20, ERC4626
 https://github.com/transmissions11/solmate
@@ -19,7 +22,6 @@ https://github.com/transmissions11/solmate
 Using solady SafeTransferLib
 https://github.com/Vectorized/solady/
 
-Special thanks to 543 from Equalizer/Guru_Network for the brainstorming & QA
 
 @notice - AccessControl = modified solmate Owned.sol w/ added Strategist + error codes.
         - Pauser = modified OZ Pausable.sol using uint8 instead of bool + error codes.
@@ -37,7 +39,7 @@ import {IEqualizerPair} from "./interfaces/IEqualizerPair.sol";
 import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
 import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 
-contract XpandrUnityVaultTakeprofit is ERC4626, AccessControl, Pauser {
+contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
     using FixedPointMathLib for uint;
 
     /*//////////////////////////////////////////////////////////////
@@ -54,7 +56,6 @@ contract XpandrUnityVaultTakeprofit is ERC4626, AccessControl, Pauser {
     event WithdrawProfit(address indexed user, uint amount);
     event Reinvest(address indexed receiver, uint lpAmt, uint shareAmt);
    
-    
     // Tokens
     address internal constant wftm = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
     address internal constant equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
@@ -66,12 +67,14 @@ contract XpandrUnityVaultTakeprofit is ERC4626, AccessControl, Pauser {
     address public gauge;
     address public router;
     address internal timestampSource;
+
+    //Paths
     IEqualizerRouter.Routes[] public equalToUsdcPath;
     IEqualizerRouter.Routes[] public usdcToEqualPath;
 
     // Xpandr addresses
     address public feeRecipient;
-    address internal royaltyReceiver;
+    address internal royaltyRecipient;
     IRewarder public rewarder;
 
     // Fee Structure
@@ -332,7 +335,7 @@ contract XpandrUnityVaultTakeprofit is ERC4626, AccessControl, Pauser {
         SafeTransferLib.safeTransfer(usdc, strategist, stratAmt);
 
         uint royaltyAmt = feeBal * royaltyFee / FEE_DIVISOR;
-        SafeTransferLib.safeTransfer(usdc, royaltyReceiver, royaltyAmt);
+        SafeTransferLib.safeTransfer(usdc, royaltyRecipient, royaltyAmt);
     }
 
     function setProfitTokenPerShare(uint256 _amount) internal {

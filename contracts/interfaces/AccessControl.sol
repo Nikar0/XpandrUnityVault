@@ -72,15 +72,15 @@ abstract contract AccessControl {
     }
 
     function checkOwner() internal virtual {
-        if(tx.origin != owner){revert NoAuth();}
+        if(msg.sender != owner){revert NoAuth();}
     }
 
     function checkAdmin() internal virtual {
-        if(tx.origin != owner || tx.origin != strategist){revert NoAuth();}
+        if(msg.sender != owner || msg.sender != strategist){revert NoAuth();}
     }
 
     function checkHarvesters() internal virtual{
-        if(tx.origin != harvester || tx.origin != strategist || tx.origin != owner){revert NoAuth();}
+        if(msg.sender != harvester || msg.sender != strategist || msg.sender != owner){revert NoAuth();}
     }
 
 }

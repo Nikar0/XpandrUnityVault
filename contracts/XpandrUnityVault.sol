@@ -19,8 +19,6 @@ https://github.com/transmissions11/solmate
 Using solady SafeTransferLib
 https://github.com/Vectorized/solady/
 
-Special thanks to 543 from Equalizer/Guru_Network for the brainstorming & QA
-
 @notice - AccessControl = modified solmate Owned.sol w/ added Strategist + error codes.
         - Pauser = modified OZ Pausable.sol using uint8 instead of bool + error codes.
 **/
@@ -147,7 +145,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     // Withdraw 'asset' from farm into vault & sends to receiver.
     function withdraw(uint shares, address receiver, address _owner) public override returns (uint assets) {
-        if(msg.sender != receiver && msg.sender != _owner){revert XpandrErrors.NotAccountOwner();}
+        if(msg.sender != receiver || msg.sender != _owner){revert XpandrErrors.NotAccountOwner();}
         if(shares > SafeTransferLib.balanceOf(address(this), _owner)){revert XpandrErrors.OverCap();}
         assets = convertToAssets(shares);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
@@ -173,7 +171,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         _harvest(msg.sender);
     }
 
-    function adminHarvest() external onlyAdmin {
+    function adminHarvest() external harvesters {
         lastHarvest = _timestamp();
         _harvest(msg.sender);
     }
@@ -336,7 +334,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
 
     function setFeesAndRecipient(uint64 _withdrawFee, uint64 _callFee, uint64 _treasuryFee, uint64 _stratFee, uint64 _recipientFee, address _recipient) external onlyAdmin {
-        if(_withdrawFee != 0 && _withdrawFee != 1){revert XpandrErrors.OverCap();}
+        if(_withdrawFee != 0 || _withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         if(sum > FEE_DIVISOR){revert XpandrErrors.OverCap();}
         if(_recipient != address(0) && _recipient != feeRecipient){feeRecipient = _recipient;}
@@ -357,7 +355,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     }
 
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
-        if(_harvestOnDeposit != 0 && _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
+        if(_harvestOnDeposit != 0 || _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
     } 
 
@@ -394,7 +392,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     }
 
     //Rescues random funds stuck that the vault can't handle.
-    function stuckTokens(address _token, uint _amount) external onlyOwner {
+    function stuckTokens(address _token, uint _amount) external onlyAdmin {
         if(ERC20(_token) == asset){revert XpandrErrors.InvalidTokenOrPath();}
         uint amount;
         if(_amount == 0){amount = SafeTransferLib.balanceOf(_token, address(this));}  else {amount = _amount;}

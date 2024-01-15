@@ -2,7 +2,7 @@
 pragma solidity 0.8.19;
 
 /**
-@notice Based on solmate's Owned.sol with added access control for an operator & error code + if instead of requires.
+@notice Based on OZ's Ownable.sol with added access control for an strategist, harvester & error code + error codes instead of requires.
  */
 
  error NoAuth();
@@ -76,11 +76,11 @@ abstract contract AccessControl {
     }
 
     function checkAdmin() internal virtual {
-        if(msg.sender != owner || msg.sender != strategist){revert NoAuth();}
+        if(msg.sender != owner && msg.sender != strategist){revert NoAuth();}
     }
 
     function checkHarvesters() internal virtual{
-        if(msg.sender != harvester || msg.sender != strategist || msg.sender != owner){revert NoAuth();}
+        if(msg.sender != harvester && msg.sender != strategist && msg.sender != owner){revert NoAuth();}
     }
 
 }

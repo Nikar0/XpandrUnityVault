@@ -19,7 +19,8 @@ https://github.com/transmissions11/solmate
 Using solady SafeTransferLib
 https://github.com/Vectorized/solady/
 
-@notice - AccessControl = modified solmate Owned.sol w/ added Strategist + error codes.
+
+@notice - AccessControl = modified OZ Ownable.sol v4 w/ added onlyAdmin and harvesters modifiers + error codes.
         - Pauser = modified OZ Pausable.sol using uint8 instead of bool + error codes.
 **/
 
@@ -62,7 +63,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     // 3rd party contracts
     address public gauge;
     address public router;
-    address public timestampSource;
+    address public timestampSource;                         // Used as timestamp source for deadlines.
 
     // Xpandr addresses
     address public feeRecipient;
@@ -79,9 +80,9 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     // Controllers
     uint64 internal lastHarvest;                            // Safeguard only allows harvest being called if > delay
     uint64 internal vaultProfit;                            // Excludes performance fees
-    uint64 internal delay;
+    uint64 internal delay;                                  // Part of deposit and harvest buffers
     uint8 internal harvestOnDeposit; 
-    uint8 internal slippage;       
+    uint8 internal slippage;                                //Accepted slippage during swaps
     uint8 internal constant slippageDiv = 100;                            
     mapping(address => uint64) internal lastUserDeposit;    //Safeguard only allows same user deposits if > delay
 
@@ -107,7 +108,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         slippage = _slippage;
         timestampSource = _timestampSource;
 
-        slippageLPs = [address(0x77CfeE25570b291b0882F68Bac770Abf512c2b5C), address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122)];
+        slippageLPs = [address(0x77CfeE25570b291b0882F68Bac770Abf512c2b5C), address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122)]; //Used to calculate slippage and get vaultProfit in usd which is displayed in UI.
         rewardTokens.push(equal);
         lastHarvest = uint64(block.timestamp);
         _addAllowance();
@@ -170,9 +171,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         lastHarvest = buffer;
         _harvest(msg.sender);
     }
-
+    
+    //Ensures that if timestampSource ever fails (meaning vaulted project stopped being used) it can still harvest using block.timestamp for deadlines.
     function adminHarvest() external harvesters {
-        lastHarvest = _timestamp();
+        lastHarvest = uint64(block.timestamp);
         _harvest(msg.sender);
     }
 
@@ -274,21 +276,25 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     function getPricePerFullShare() external view returns (uint) {
         return totalSupply == 0 ? 1e18 : totalAssets() * 1e18 / totalSupply;
     }
-
+    
+    //Conversion from LP to shares when depositing.
     function convertToShares(uint assets) public view override returns (uint) {
         uint supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
         return supply == 0 ? assets : assets.mulDivDown(supply, totalAssets());
     }
 
+    //Function name in the ERC4626 standard is previewMint, renamed to have a similar naming to what's used in deposit. Will undo if considered standard breaking.
     function convertToAssets(uint shares) public view override returns (uint) {
         uint supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
         return supply == 0 ? shares : shares.mulDivUp(totalAssets(), supply);
     }
 
+    //Returns USD value generated to depositors (excluding fees) to be displayed in the UI.
     function vaultProfits() external view returns (uint64){
         return vaultProfit / 1e6;
     }
 
+    //Returns current values for slippage and delay
     function getSlippageGetDelay() external view returns (uint8 _slippage, uint64 buffer){
         return (slippage, delay);
     }
@@ -334,7 +340,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
 
     function setFeesAndRecipient(uint64 _withdrawFee, uint64 _callFee, uint64 _treasuryFee, uint64 _stratFee, uint64 _recipientFee, address _recipient) external onlyAdmin {
-        if(_withdrawFee != 0 || _withdrawFee != 1){revert XpandrErrors.OverCap();}
+        if(_withdrawFee != 0 && _withdrawFee != 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         if(sum > FEE_DIVISOR){revert XpandrErrors.OverCap();}
         if(_recipient != address(0) && _recipient != feeRecipient){feeRecipient = _recipient;}
@@ -355,7 +361,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     }
 
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
-        if(_harvestOnDeposit != 0 || _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
+        if(_harvestOnDeposit != 0 && _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
     } 
 

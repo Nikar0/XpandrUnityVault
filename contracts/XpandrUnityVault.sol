@@ -125,12 +125,14 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
     function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
         if(msg.sender != receiver){revert XpandrErrors.NotAccountOwner();}
-        if(lastUserDeposit[receiver] != 0) {if(_timestamp() < lastUserDeposit[receiver] + delay) {revert XpandrErrors.UnderTimeLock();}}
+        uint64 lastDeposit = lastUserDeposit[receiver];
+        uint64 timestamp = _timestamp();
+        if(lastDeposit != 0) {if(timestamp < lastDeposit + delay) {revert XpandrErrors.UnderTimeLock();}}
         if(assets > SafeTransferLib.balanceOf(address(asset), receiver)){revert XpandrErrors.OverCap();}
         shares = convertToShares(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
 
-        lastUserDeposit[receiver] = _timestamp();
+        lastDeposit = timestamp;
         emit Deposit(receiver, receiver, assets, shares);
 
         SafeTransferLib.safeTransferFrom(address(asset), receiver, address(this), assets); // Need to transfer before minting or ERC777s could reenter.

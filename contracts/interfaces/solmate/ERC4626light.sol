@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-pragma solidity ^0.8.19;
+pragma solidity 0.8.19;
 
 import {ERC20} from "./ERC20.sol";
 import {SafeTransferLib} from "../solady/SafeTransferLib.sol";
@@ -129,9 +129,10 @@ abstract contract ERC4626 is ERC20 {
         return supply == 0 ? assets : assets.mulDivDown(supply, totalAssets());
     }
 
+    //This is actually previewMint but kept naming in line with func used for deposit. 
     function convertToAssets(uint256 shares) public view virtual returns (uint256) {
         uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
-        return supply == 0 ? shares : shares.mulDivDown(totalAssets(), supply);
+        return supply == 0 ? shares : shares.mulDivUp(totalAssets(), supply);
     }
 
     /*
@@ -142,6 +143,12 @@ abstract contract ERC4626 is ERC20 {
 
     function previewDeposit(uint256 assets) public view virtual returns (uint256) {
         return convertToShares(assets);
+    }
+
+     //Original Convert To Assets.
+    function convertToAssets(uint256 shares) public view virtual returns (uint256) {
+        uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
+        return supply == 0 ? shares : shares.mulDivDown(totalAssets(), supply);
     }
     
     function previewRedeem(uint256 shares) public view virtual returns (uint256) {

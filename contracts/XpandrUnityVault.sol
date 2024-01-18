@@ -424,7 +424,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     function afterDeposit(uint assets, uint shares) internal override {
         uint64 buffer = _timestamp();
         if(buffer > lastHarvest + delay){
-        lastHarvest = uint64(block.timestamp);
+        lastHarvest = buffer;
         _harvest(tx.origin);
         }
         

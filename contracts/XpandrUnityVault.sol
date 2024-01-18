@@ -63,7 +63,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     // 3rd party contracts
     address public gauge;
     address public router;
-    address public timestampSource;                         // Used as timestamp source for deadlines.
+    address internal timestampSource;                         // Used as timestamp source for deadlines.
 
     // Xpandr addresses
     address public feeRecipient;
@@ -125,14 +125,12 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
     function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
         if(msg.sender != receiver){revert XpandrErrors.NotAccountOwner();}
-        uint64 lastDeposit = lastUserDeposit[receiver];
-        uint64 timestamp = _timestamp();
-        if(lastDeposit != 0) {if(timestamp < lastDeposit + delay) {revert XpandrErrors.UnderTimeLock();}}
+        if(lastUserDeposit[receiver] != 0) {if(_timestamp() < lastUserDeposit[receiver] + delay) {revert XpandrErrors.UnderTimeLock();}}
         if(assets > SafeTransferLib.balanceOf(address(asset), receiver)){revert XpandrErrors.OverCap();}
         shares = convertToShares(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
 
-        lastDeposit = timestamp;
+        lastUserDeposit[receiver] = _timestamp();
         emit Deposit(receiver, receiver, assets, shares);
 
         SafeTransferLib.safeTransferFrom(address(asset), receiver, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
@@ -255,7 +253,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         return wrappedOut * platformFee / FEE_DIVISOR * callFee / FEE_DIVISOR;
     }
 
-    function idleFunds() external view returns (uint) {
+    function idleFunds() public view returns (uint) {
         return SafeTransferLib.balanceOf(address(asset), address(this));
     }
     
@@ -291,7 +289,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         return supply == 0 ? shares : shares.mulDivUp(totalAssets(), supply);
     }
 
-    //Returns USD value generated to depositors (excluding fees) to be displayed in the UI.
+    //Returns USD value generated to depositors (exclusding fees) to be displayed in the UI.
     function vaultProfits() external view returns (uint64){
         return vaultProfit / 1e6;
     }
@@ -321,7 +319,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     function unpause() external whenPaused onlyAdmin {
         _unpause();
         _addAllowance();
-        _earn();
+        if(idleFunds() != 0){ _earn();}
     }
 
     // Guards against timestamp spoofing
@@ -342,7 +340,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
 
     function setFeesAndRecipient(uint64 _withdrawFee, uint64 _callFee, uint64 _treasuryFee, uint64 _stratFee, uint64 _recipientFee, address _recipient) external onlyAdmin {
-        if(_withdrawFee != 0 && _withdrawFee != 1){revert XpandrErrors.OverCap();}
+        if(_withdrawFee > 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
         if(sum > FEE_DIVISOR){revert XpandrErrors.OverCap();}
         if(_recipient != address(0) && _recipient != feeRecipient){feeRecipient = _recipient;}
@@ -363,7 +361,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     }
 
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
-        if(_harvestOnDeposit != 0 && _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
+        if(_harvestOnDeposit > 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
     } 
 
@@ -396,7 +394,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         emit CustomTx(_token, bal);
         SafeTransferLib.safeApprove(_token, router, 0);
         SafeTransferLib.safeApprove(_token, router, type(uint).max);
-        IEqualizerRouter(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(bal, 1, _path, address(this), _timestamp());
+        IEqualizerRouter(router).swapExactTokensForTokens(bal, 1, _path, address(this), block.timestamp);
     }
 
     //Rescues random funds stuck that the vault can't handle.
@@ -424,6 +422,11 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
 
     //ERC4626 hook. Called by deposit if harvestOnDeposit = 1. Args unused but part of spec
     function afterDeposit(uint assets, uint shares) internal override {
+        uint64 buffer = _timestamp();
+        if(buffer > lastHarvest + delay){
+        lastHarvest = uint64(block.timestamp);
         _harvest(tx.origin);
+        }
+        
     }
 }

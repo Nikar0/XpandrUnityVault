@@ -24,7 +24,7 @@ abstract contract AccessControl {
     address public owner;
     address public strategist;
     address public constant treasury = address(0xE37058057B0751bD2653fdeB27e8218439e0f726);
-    address public constant multiSig = address(0x3522f55fE566420f14f89bd46820EC66D3A5eb7c);
+    address public constant multisig = address(0x3522f55fE566420f14f89bd46820EC66D3A5eb7c);
     address internal harvester = address(0xDFAA88D5d068370689b082D34d7B546CbF393bA9);
 
     modifier onlyOwner() virtual {
@@ -47,7 +47,7 @@ abstract contract AccessControl {
     //////////////////////////////////////////////////////////////*/
 
     constructor() {
-        owner = multiSig;
+        owner = multisig;
         emit OwnershipTransferred(address(0), owner);
     }
 

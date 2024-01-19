@@ -49,6 +49,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     event RouterSetGaugeSet(address indexed newRouter, address indexed newGauge);
     event Panic(address indexed caller);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
+    event HarvestOnDepositSet(uint8 harvestOnDeposit);
+    event TimestampSourceSet(address indexed newTimestampSource);
     event SetSlippageSetDelaySet(uint8 slippage, uint64 delay);
     event CustomTx(address indexed from, uint indexed amount);
     event StuckTokens(address indexed caller, uint indexed amount, address indexed token);
@@ -125,12 +127,14 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
     function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
         if(msg.sender != receiver){revert XpandrErrors.NotAccountOwner();}
-        if(lastUserDeposit[receiver] != 0) {if(_timestamp() < lastUserDeposit[receiver] + delay) {revert XpandrErrors.UnderTimeLock();}}
+        uint64 lastDeposit = lastUserDeposit[receiver];
+        uint64 timestamp = _timestamp();
+        if(lastDeposit != 0) {if(timestamp < lastDeposit + delay) {revert XpandrErrors.UnderTimeLock();}}
         if(assets > SafeTransferLib.balanceOf(address(asset), receiver)){revert XpandrErrors.OverCap();}
         shares = convertToShares(assets);
         if(assets == 0 || shares == 0){revert XpandrErrors.ZeroAmount();}
 
-        lastUserDeposit[receiver] = _timestamp();
+        lastDeposit = timestamp;
         emit Deposit(receiver, receiver, assets, shares);
 
         SafeTransferLib.safeTransferFrom(address(asset), receiver, address(this), assets); // Need to transfer before minting or ERC777s could reenter.
@@ -172,7 +176,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         _harvest(msg.sender);
     }
     
-    //Ensures that if timestampSource ever fails (meaning vaulted project stopped being used) it can still harvest using block.timestamp for deadlines.
+    //Ensures that if timestampSource ever fails it can still harvest using block.timestamp for deadlines.
     function adminHarvest() external harvesters {
         lastHarvest = uint64(block.timestamp);
         _harvest(msg.sender);
@@ -207,6 +211,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         }
     }
 
+    //Deducts fees, adds to vaultProfit & tx fees to receivers.
     function _chargeFees(address caller) internal {                   
         uint equalBal = SafeTransferLib.balanceOf(equal, address(this));
         uint feeBal = equalBal * platformFee / FEE_DIVISOR;
@@ -339,6 +344,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
                                SETTERS
     //////////////////////////////////////////////////////////////*/
 
+    //Sets fee scheme. withdrawFee capped at 1.
     function setFeesAndRecipient(uint64 _withdrawFee, uint64 _callFee, uint64 _treasuryFee, uint64 _stratFee, uint64 _recipientFee, address _recipient) external onlyAdmin {
         if(_withdrawFee > 1){revert XpandrErrors.OverCap();}
         uint64 sum = _callFee + _stratFee + _treasuryFee + _recipientFee;
@@ -363,6 +369,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
         if(_harvestOnDeposit > 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
+        emit HarvestOnDepositSet(_harvestOnDeposit);
     } 
 
     function setSlippageSetDelay(uint8 _slippage, uint64 _delay) external onlyAdmin{
@@ -377,6 +384,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     function setTimestampSource(address source) external onlyAdmin{
         if(source == address(0)){revert XpandrErrors.ZeroAddress();}
         if(timestampSource != source){timestampSource = source;}
+        emit TimestampSourceSet(source);
     }
 
     /*//////////////////////////////////////////////////////////////

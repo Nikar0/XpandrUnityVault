@@ -1,9 +1,20 @@
 # XpandrUnityVault
 
+SPDX-License-Identifier: No License (None)
+No permissions granted before June 1st 2026, then GPL-3.0 after this date.
+
+@title  - XpandrUnityVault
+@author - Nikar0 
+@notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
+          Includes: 0% withdraw fee default / Vault profit in USD / Deposit & harvest buffers / Timestamp & Slippage protection
+
+https://www.github.com/nikar0/Xpandr4626  @Nikar0_
+
+
 # Test Results - Foundry
 
-Running 17 tests for test/XpandrUnityVault.t.sol:XpandrUnityVaultTest
-[PASS] testCallReward() (gas: 129060)
+Running 21 tests for test/XpandrUnityVault.t.sol:XpandrUnityVaultTest
+[PASS] testCallReward() (gas: 129090)
 Logs:
   Reward amt:  1952628208512
   Call reward > 0 post deposit
@@ -24,7 +35,7 @@ Logs:
   Total Assets Before Withdraw Attempt: 2318483958593833989 After attempt: 2318483958593833989
   Attempt by attacker to withdraw depositor's funds has reverted
 
-[PASS] testDepositAndWithdrawRounding() (gas: 139630)
+[PASS] testDepositAndWithdrawRoundingFuzz(uint256) (runs: 256, μ: 314802, ~: 314803) (gas: 139630)
 Logs:
   LP pre deposit:  2318483958593833989 LP after withdraw:  2318483958593833989
   Vault Balance after withdrawal: 0
@@ -43,14 +54,14 @@ Logs:
   Assets rescued into the vault: 2318483958593833989
   Vault paused and funds emergency wthdrawn from farm.
 
-[PASS] testHarvestOnDeposit() (gas: 920931)
+[PASS] testHarvestOnDeposit(uint64) (runs: 256, μ: 1027821, ~: 1001464) (gas: 920931)
 Logs:
   vaultBalance: 2318483958593833989
   VaultBalance post harvestOnDeposit: 4639495608025638114
   2527690837970136
   Vault has harvested successfully with harvestOnDeposit turned on
 
-[PASS] testMaxPerformanceFee() (gas: 30897)
+[PASS] testMaxPerformanceFee(uint64) (runs: 256, μ: 35052, ~: 31843) (gas: 30897)
 Logs:
   withdrawFee function call arg:  2
   withdrawFee after call: 0
@@ -76,10 +87,10 @@ Logs:
 Logs:
   timeStampSource changed to 0x77CfeE25570b291b0882F68Bac770Abf512c2b5C
 
-[PASS] testSlippageAndDelay() (gas: 37009)
+[PASS] testSlippageAndDelay() (gas: 37071)
 Logs:
   slippage value after failed call 2
-  slippage value after failed call 4
+  slippage value after successful call 4
   If arg called outside of bounds, reverts. If  args called within bounds, assigned to global if != to arg
 
 [PASS] testStuckTokens() (gas: 70312)
@@ -99,12 +110,35 @@ Logs:
   Before Harvest: 2318483958593833989  After Harvest: 2318509235502213689
   Harvest successful and totalAssets() increased
 
-Test result: ok. 17 passed; 0 failed; 0 skipped; finished in 21.18s
+[PASS] testViewFunctions() (gas: 32162)
+Logs:
+  balanceOfPool, idleFunds, getPricePerFullShare & getSlippageGetDelay are returning correct values
+
+[PASS] testUnauthorisedShareTransfer() (gas: 20557)
+Logs:
+  Unauthorized shares transfer reverted
+
+[PASS] testSetStrategist() (gas: 26250)
+Logs:
+  Strategist caller successfully changed strategist address to: 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+  Unauthorized called reverted, strategist address remains unaltered 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+
+[PASS] testSetHarvester() (gas: 30450)
+Logs:
+  SetHarvester authorized caller successfully changed address to: 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+
+
+Test result: ok. 21 passed; 0 failed; 0 skipped; finished in 26.34s
+ 
+Ran 1 test suites: 21 tests passed, 0 failed, 0 skipped (21 total tests)
+
 
 # Coverage excluding libs/interfaces
 | File                                         | % Lines          | % Statements     | % Branches      | % Funcs        |
 |----------------------------------------------|------------------|------------------|-----------------|----------------|
-| src/XpandrUnityVault.sol                     | 83.45% (116/139) | 77.46% (189/244) | 57.14% (40/70)  | 83.33% (30/36) |
-| src/interfaces/AccessControl.sol             | 30.00% (3/10)    | 45.00% (9/20)    | 50.00% (4/8)    | 50.00% (3/6)   |
+| src/XpandrUnityVault.sol                     | 90.78% (128/141) | 84.27% (209/248) | 62.50% (45/72)  | 86.11% (31/36) |
+| src/interfaces/AccessControl.sol             | 80.00% (8/10)    | 80.00% (16/20)   | 87.50% (7/8)    | 83.33% (5/6)   |
 | src/interfaces/Pauser.sol                    | 100.00% (7/7)    | 81.82% (9/11)    | 50.00% (2/4)    | 100.00% (5/5)  |
-| Total                                        | 87.17% (136/156) | 77.81% (214/275) | 56.09% (46/82)  | 93.61% (44/47) |
+| Total                                        | 90.50% (143/158) | 83.87% (234/279) | 64.28% (54/84)  | 87.23% (41/47) |
+
+87.2% avg coverage excl/ branches.

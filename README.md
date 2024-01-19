@@ -1,12 +1,16 @@
 # XpandrUnityVault
 
 SPDX-License-Identifier: No License (None)
+
 No permissions granted before June 1st 2026, then GPL-3.0 after this date.
 
 @title  - XpandrUnityVault
+
 @author - Nikar0 
+
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
-          Includes: 0% withdraw fee default / Vault profit in USD / Deposit & harvest buffers / Timestamp & Slippage protection
+
+Includes: 0% withdraw fee default / Vault profit in USD / Deposit & harvest buffers / Timestamp & Slippage protection
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 
@@ -14,6 +18,7 @@ https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 # Test Results - Foundry
 
 Running 21 tests for test/XpandrUnityVault.t.sol:XpandrUnityVaultTest
+
 [PASS] testCallReward() (gas: 129090)
 Logs:
   Reward amt:  1952628208512

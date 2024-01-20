@@ -140,7 +140,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         _mint(receiver, shares);
         _earn();
 
-        if(harvestOnDeposit != 0) {afterDeposit(assets, shares);}
+        if(harvestOnDeposit != 0) {afterDeposit(timestamp, 0);}
     }
 
     function withdrawAll() external {
@@ -287,7 +287,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         return supply == 0 ? assets : assets.mulDivDown(supply, totalAssets());
     }
 
-    //Function name in the ERC4626 standard is previewMint, renamed to have a similar naming to what's used in deposit. Will undo if considered standard breaking.
+    //Function name in the ERC4626 standard is previewMint, renamed to have a similar naming to what's used in deposit
     function convertToAssets(uint shares) public view override returns (uint) {
         uint supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
         return supply == 0 ? shares : shares.mulDivUp(totalAssets(), supply);
@@ -427,11 +427,11 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         SafeTransferLib.safeApprove(equal, pEqual, type(uint).max);
     }
 
-    //ERC4626 hook. Called by deposit if harvestOnDeposit = 1. Args unused but part of spec
-    function afterDeposit(uint assets, uint shares) internal override {
-        uint64 buffer = _timestamp();
-        if(buffer > lastHarvest + delay){
-        lastHarvest = buffer;
+    //ERC4626 hook. Called by deposit if harvestOnDeposit = 1. 
+    //Uses "assets" arg to receive deposit timestamp instead. 2nd arg unused.
+    function afterDeposit(uint64 timestamp, uint shares) internal override {
+        if(timestamp > lastHarvest + delay){
+        lastHarvest = timestamp;
         _harvest(tx.origin);
         }
         

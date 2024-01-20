@@ -186,5 +186,6 @@ abstract contract ERC4626 is ERC20 {
    
     //function beforeWithdraw(uint256 assets, uint256 shares) internal virtual {}
 
-    function afterDeposit(uint256 assets, uint256 shares) internal virtual {}
+    //Uint256 assets became uint64 timestamp to serve implementation's need.
+    function afterDeposit(uint64 timestamp, uint256 shares) internal virtual {}
 }

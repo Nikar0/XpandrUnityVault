@@ -85,7 +85,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     uint64 internal delay;                                  // Part of deposit and harvest buffers
     uint64 internal slippage;                                //Accepted slippage during swaps
     uint64 internal constant slippageDiv = 100;    
-    uint internal harvestOnDeposit; 
+    //uint internal harvestOnDeposit; 
                         
     mapping(address => uint64) internal lastUserDeposit;    //Safeguard only allows same user deposits if > delay
 
@@ -110,7 +110,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         delay = 600; // 10 mins
         slippage = _slippage;
         timestampSource = _timestampSource;
-        harvestOnDeposit = 1;
 
         slippageLPs = [address(0x77CfeE25570b291b0882F68Bac770Abf512c2b5C), address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122)]; //Used to calculate slippage and get vaultProfit in usd which is displayed in UI.
         rewardTokens.push(equal);
@@ -367,8 +366,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         emit RouterSetGaugeSet(router, gauge);
     }
 
-    function setHarvestOnDeposit(uint _harvestOnDeposit) external onlyAdmin {
-        if(_harvestOnDeposit > 2 || _harvestOnDeposit < 1){revert XpandrErrors.OverCap();}
+    function setHarvestOnDeposit(uint64 _harvestOnDeposit) external onlyAdmin {
+        if(_harvestOnDeposit > 2 || _harvestOnDeposit <1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
         emit HarvestOnDepositSet(_harvestOnDeposit);
     } 
@@ -429,7 +428,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         SafeTransferLib.safeApprove(equal, pEqual, type(uint).max);
     }
 
-    //ERC4626 hook. Called by deposit if harvestOnDeposit = 1. 
+    //ERC4626 hook. Called by deposit if harvestOnDeposit = 2. 
     //Uses "assets" arg to receive deposit timestamp instead. 2nd arg unused.
     function afterDeposit(uint64 timestamp, uint shares) internal override {
         if(timestamp > lastHarvest + delay){

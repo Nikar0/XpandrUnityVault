@@ -356,9 +356,9 @@ contract XpandrUnityVaultTest is Test {
     }
   }
 
-  function testHarvestOnDeposit(uint64 delay) public{
+  function testHarvestOnDeposit(uint64 delay, uint64 onDeposit) public{
     vm.assume(delay > 200 && delay < 2500);
-    //vm.assume(onDeposit >= 0 && onDeposit < 5);
+    vm.assume(onDeposit >= 0 && onDeposit < 5);
     address newDepositor = vm.addr(1);
     vm.prank(strategist);
     try
@@ -474,19 +474,24 @@ contract XpandrUnityVaultTest is Test {
   }
 
   function testSetHarvestOnDeposit(uint value) external {
+    vm.assume(value > 0 && value < 6);
     vm.prank(strategist);
 
     try
     vault.setHarvestOnDeposit(value){}
     catch{}
+
+    console.log("harvestOnDeposit state after call", vault.harvestOnDeposit());
     
-      if(vault.harvestOnDeposit() == 2 || vault.harvestOnDeposit() == 1) {
-        assertTrue(vault.harvestOnDeposit() == 2 || vault.harvestOnDeposit() == 1);
-        console.log("harvestOnDeposit set within bounds");
-      } else {
-         assertTrue(vault.harvestOnDeposit() !=2 || vault.harvestOnDeposit() != 1);
-          console.log("harvestOnDeposit set outside of bounds, tx reverted");
-      }
-   
+    if(vault.harvestOnDeposit() == 2 || vault.harvestOnDeposit() == 1) {
+      assertTrue(vault.harvestOnDeposit() == 2 || vault.harvestOnDeposit() == 1);
+      console.log("harvestOnDeposit remains within bounds:", vault.harvestOnDeposit());
+    }
+
+    if(vault.harvestOnDeposit() < 1 || vault.harvestOnDeposit() > 2){
+      assertTrue(vault.harvestOnDeposit() < 1 || vault.harvestOnDeposit() > 2);
+      console.log("harvestOnDeposit args outside of bounds, tx reverted:", value);
+    }
   }
+   
 }

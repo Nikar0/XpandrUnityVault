@@ -49,7 +49,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     event RouterSetGaugeSet(address indexed newRouter, address indexed newGauge);
     event Panic(address indexed caller);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
-    event HarvestOnDepositSet(uint harvestOnDeposit);
+    event HarvestOnDepositSet(uint64 harvestOnDeposit);
     event TimestampSourceSet(address indexed newTimestampSource);
     event SetSlippageSetDelaySet(uint64 slippage, uint64 delay);
     event CustomTx(address indexed from, uint indexed amount);

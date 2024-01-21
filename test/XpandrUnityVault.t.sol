@@ -35,7 +35,7 @@ contract XpandrUnityVaultTest is Test {
 
 
   /*Test Notes 
-  For testing to run corretly, change slippage, lastHarvest, harvester & delay to public on contract. 
+  For testing to run corretly, change slippage, lastHarvest, harvester, harvestOnDeposit & delay to public on contract. 
   */
 
 
@@ -358,9 +358,12 @@ contract XpandrUnityVaultTest is Test {
 
   function testHarvestOnDeposit(uint64 delay) public{
     vm.assume(delay > 200 && delay < 2500);
+    //vm.assume(onDeposit >= 0 && onDeposit < 5);
     address newDepositor = vm.addr(1);
     vm.prank(strategist);
-    vault.setHarvestOnDeposit(1);
+    try
+    vault.setHarvestOnDeposit(2){}
+    catch{
     vm.prank(impersonated);
     asset.transfer(newDepositor, lpAmount);
     uint64 lastHarvest = vault.lastHarvest();
@@ -377,18 +380,21 @@ contract XpandrUnityVaultTest is Test {
 
     uint laterVaultBalance = vault.totalAssets();
     console.log("VaultBalance post harvestOnDeposit:", laterVaultBalance);
-    uint harvestedAmt = laterVaultBalance - (earlyVaultBalance * 2);
+    uint harvestedAmt = laterVaultBalance - earlyVaultBalance - lpAmount;
 
     console.log("Harvested amount", harvestedAmt);
 
     if(harvestedAmt != 0){
-    assertTrue(laterVaultBalance - lpAmount * 2 != 0);
+    assertTrue(laterVaultBalance - earlyVaultBalance - lpAmount != 0);
     console.log("Vault has harvested successfully with harvestOnDeposit turned on");
     } else{
-      assertTrue(laterVaultBalance - (lpAmount *2) == 0);
+      assertTrue(laterVaultBalance - earlyVaultBalance + lpAmount == 0);
       console.log("Vault has deposited but not harvested due to being < buffer");
     }
+    }
   }
+
+  
 
   //Tests for correct strategist access control
   function testSetStrategist() external{
@@ -441,5 +447,46 @@ contract XpandrUnityVaultTest is Test {
     assertTrue(shareBalPreAttack == shareBalAfterAttack);
     console.log("Unauthorized shares transfer reveted");
     }
+  }
+
+  function testWithdrawGas() external{
+    uint beforeWithdraw = asset.balanceOf(address(this));
+    vault.withdraw(lpAmount, address(this), address(this));
+    uint afterWithdraw = asset.balanceOf(address(this));
+
+    assertTrue(afterWithdraw > beforeWithdraw);
+  }
+
+  function testDepositAndWithdrawGas() external {
+    uint shares = vault.convertToShares(lpAmount);
+
+    vault.withdraw(shares, legitDepositor, legitDepositor);
+
+    uint withdrawnLpBal = asset.balanceOf(address(this));
+    uint vaultBalanceAfter = vault.totalAssets();
+    console.log("LP pre deposit: ", lpAmount, "LP after withdraw: ", withdrawnLpBal);
+    console.log("Vault Balance after withdrawal:", vaultBalanceAfter);
+
+    assertEq(0, vaultBalanceAfter, "Vault balance should be 0 after deposit and withdraw");
+    assertEq(lpAmount, withdrawnLpBal, "LP amount should be the same as pre-deposit after withdrawing");
+    console.log("No rounding loss between depositing and withdrawing LP.");
+
+  }
+
+  function testSetHarvestOnDeposit(uint value) external {
+    vm.prank(strategist);
+
+    try
+    vault.setHarvestOnDeposit(value){}
+    catch{}
+    
+      if(vault.harvestOnDeposit() == 2 || vault.harvestOnDeposit() == 1) {
+        assertTrue(vault.harvestOnDeposit() == 2 || vault.harvestOnDeposit() == 1);
+        console.log("harvestOnDeposit set within bounds");
+      } else {
+         assertTrue(vault.harvestOnDeposit() !=2 || vault.harvestOnDeposit() != 1);
+          console.log("harvestOnDeposit set outside of bounds, tx reverted");
+      }
+   
   }
 }

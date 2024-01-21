@@ -49,9 +49,9 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     event RouterSetGaugeSet(address indexed newRouter, address indexed newGauge);
     event Panic(address indexed caller);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
-    event HarvestOnDepositSet(uint8 harvestOnDeposit);
+    event HarvestOnDepositSet(uint harvestOnDeposit);
     event TimestampSourceSet(address indexed newTimestampSource);
-    event SetSlippageSetDelaySet(uint8 slippage, uint64 delay);
+    event SetSlippageSetDelaySet(uint64 slippage, uint64 delay);
     event CustomTx(address indexed from, uint indexed amount);
     event StuckTokens(address indexed caller, uint indexed amount, address indexed token);
     
@@ -83,9 +83,10 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     uint64 internal lastHarvest;                            // Safeguard only allows harvest being called if > delay
     uint64 internal vaultProfit;                            // Excludes performance fees
     uint64 internal delay;                                  // Part of deposit and harvest buffers
-    uint8 internal harvestOnDeposit; 
-    uint8 internal slippage;                                //Accepted slippage during swaps
-    uint8 internal constant slippageDiv = 100;                            
+    uint64 internal slippage;                                //Accepted slippage during swaps
+    uint64 internal constant slippageDiv = 100;    
+    uint internal harvestOnDeposit; 
+                        
     mapping(address => uint64) internal lastUserDeposit;    //Safeguard only allows same user deposits if > delay
 
     constructor(
@@ -109,6 +110,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         delay = 600; // 10 mins
         slippage = _slippage;
         timestampSource = _timestampSource;
+        harvestOnDeposit = 1;
 
         slippageLPs = [address(0x77CfeE25570b291b0882F68Bac770Abf512c2b5C), address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122)]; //Used to calculate slippage and get vaultProfit in usd which is displayed in UI.
         rewardTokens.push(equal);
@@ -140,7 +142,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         _mint(receiver, shares);
         _earn();
 
-        if(harvestOnDeposit != 0) {afterDeposit(timestamp, 0);}
+        if(harvestOnDeposit == 2) {afterDeposit(timestamp, 0);}
     }
 
     function withdrawAll() external {
@@ -148,7 +150,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     }
 
     // Withdraw 'asset' from farm into vault & sends to receiver.
-    function withdraw(uint shares, address receiver, address _owner) public override returns (uint assets) {
+    function withdraw(uint shares, address receiver, address _owner) public nonReentrant override returns (uint assets) {
         if(msg.sender != receiver || msg.sender != _owner){revert XpandrErrors.NotAccountOwner();}
         if(shares > SafeTransferLib.balanceOf(address(this), _owner)){revert XpandrErrors.OverCap();}
         assets = convertToAssets(shares);
@@ -299,7 +301,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     }
 
     //Returns current values for slippage and delay
-    function getSlippageGetDelay() external view returns (uint8 _slippage, uint64 buffer){
+    function getSlippageGetDelay() external view returns (uint64 _slippage, uint64 buffer){
         return (slippage, delay);
     }
 
@@ -365,13 +367,13 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         emit RouterSetGaugeSet(router, gauge);
     }
 
-    function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
-        if(_harvestOnDeposit > 1){revert XpandrErrors.OverCap();}
+    function setHarvestOnDeposit(uint _harvestOnDeposit) external onlyAdmin {
+        if(_harvestOnDeposit > 2 || _harvestOnDeposit < 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
         emit HarvestOnDepositSet(_harvestOnDeposit);
     } 
 
-    function setSlippageSetDelay(uint8 _slippage, uint64 _delay) external onlyAdmin{
+    function setSlippageSetDelay(uint64 _slippage, uint64 _delay) external onlyAdmin{
         if(_delay > 1800 || _delay < 600) {revert XpandrErrors.OverCap();}
         if(_slippage > 5 || _slippage < 1){revert XpandrErrors.OverCap();}
 

@@ -2,22 +2,13 @@
 // No permissions granted before June 1st 2026, then GPL-3.0 after this date.
 
 /** 
-@title  - XpandrUnityVault
+@title  - XpandrUnityVaultveLocker
 @author - Nikar0 
 @notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
           Includes: 0% withdraw fee default / Vault profit in USD / Deposit & harvest buffers / Timestamp & Slippage protection
+          This vault locks rewards into depositor assigned veNFT.
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
-
-
-Vault based on EIP-4626 by @joey_santoro, @transmissions11, et all.
-https://eips.ethereum.org/EIPS/eip-4626
-
-Using solmate libs for ERC20, ERC4626
-https://github.com/transmissions11/solmate
-
-Using solady SafeTransferLib
-https://github.com/Vectorized/solady/
 
 
 @notice - AccessControl = modified OZ Ownable.sol v4 w/ added onlyAdmin and harvesters modifiers + error codes.
@@ -49,7 +40,6 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     event RouterSetGaugeSet(address indexed newRouter, address indexed newGauge);
     event Panic(address indexed caller);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
-    event HarvestOnDepositSet(uint64 harvestOnDeposit);
     event TimestampSourceSet(address indexed newTimestampSource);
     event DelaySet(uint64 delay);
     event CustomTx(address indexed from, uint indexed amount);
@@ -160,8 +150,6 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         user.rewardDebt = (userAmt * accProfitTokenPerShare) / PROFIT_TOKEN_PER_SHARE_PRECISION;
 
         _earn();
-
-        if(harvestOnDeposit == 2) {afterDeposit(timestamp, 0);}
     }
 
     function withdrawAll() external {
@@ -422,12 +410,6 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         emit RouterSetGaugeSet(router, gauge);
     }
 
-    function setHarvestOnDeposit(uint64 _harvestOnDeposit) external onlyAdmin {
-        if(_harvestOnDeposit > 2 || _harvestOnDeposit < 1){revert XpandrErrors.OverCap();}
-        harvestOnDeposit = _harvestOnDeposit;
-        emit HarvestOnDepositSet(_harvestOnDeposit);
-    } 
-
     function SetDelay(uint64 _delay) external onlyAdmin{
         if(_delay > 1800 || _delay < 600) {revert XpandrErrors.OverCap();}
         if(_delay != delay){delay = _delay;}
@@ -480,10 +462,6 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     //ERC4626 hook. Called by deposit if harvestOnDeposit = 2. 
     //Uses "assets" arg to receive deposit timestamp instead. 2nd arg unused.
     function afterDeposit(uint64 timestamp, uint shares) internal override {
-        if(timestamp > lastHarvest + delay){
-        lastHarvest = timestamp;
-        _harvest(tx.origin);
-        }
-        
+      revert XpandrErrors.InvalidTokenOrPath();
     }
 }

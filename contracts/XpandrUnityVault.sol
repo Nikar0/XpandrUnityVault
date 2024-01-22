@@ -366,7 +366,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     }
 
     function setHarvestOnDeposit(uint64 _harvestOnDeposit) external onlyAdmin {
-        if(_harvestOnDeposit > 2 || _harvestOnDeposit <1){revert XpandrErrors.OverCap();}
+        if(_harvestOnDeposit > 2 || _harvestOnDeposit < 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
         emit HarvestOnDepositSet(_harvestOnDeposit);
     } 

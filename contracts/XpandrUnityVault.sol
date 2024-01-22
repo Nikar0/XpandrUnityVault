@@ -85,7 +85,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     uint64 internal delay;                                  // Part of deposit and harvest buffers
     uint64 internal slippage;                                //Accepted slippage during swaps
     uint64 internal constant slippageDiv = 100;    
-    //uint internal harvestOnDeposit; 
                         
     mapping(address => uint64) internal lastUserDeposit;    //Safeguard only allows same user deposits if > delay
 

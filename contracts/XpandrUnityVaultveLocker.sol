@@ -36,7 +36,7 @@ import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
 import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
 import {IveEQUAL} from "./interfaces/IveEQUAL.sol";
 
-// Equalizer EQUAL-pEQUAL //
+// Equalizer EQUAL-pEQUAL veLocker//
 
 contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     using FixedPointMathLib for uint;
@@ -51,14 +51,13 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
     event HarvestOnDepositSet(uint64 harvestOnDeposit);
     event TimestampSourceSet(address indexed newTimestampSource);
-    event SetSlippageSetDelaySet(uint64 slippage, uint64 delay);
+    event DelaySet(uint64 delay);
     event CustomTx(address indexed from, uint indexed amount);
     event StuckTokens(address indexed caller, uint indexed amount, address indexed token);
     
     // Tokens
     address internal constant wftm = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
     address internal constant equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
-    address internal constant pEqual = address(0xf773E8590A7411154E590a6D1E2648497c60ae6F);
     address[] internal rewardTokens;
     address[2] internal slippageLPs;
     address[] internal depositorAddresses;
@@ -86,8 +85,6 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     uint64 internal lastHarvest;                            // Safeguard only allows harvest being called if > delay
     uint64 internal vaultProfit;                            // Excludes performance fees
     uint64 internal delay;                                  // Part of deposit and harvest buffers
-    uint64 internal slippage;                                //Accepted slippage during swaps
-    uint64 internal constant slippageDiv = 100;
     uint256 internal constant PROFIT_TOKEN_PER_SHARE_PRECISION = 1e24;
     uint256 public accProfitTokenPerShare;
     struct UserInfo {
@@ -106,7 +103,6 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         ERC20 _asset,
         address _gauge,
         address _router,
-        uint8 _slippage,
         address _timestampSource,
         address _strategist
         )
@@ -121,7 +117,6 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         strategist = _strategist;
         emit SetStrategist(address(0), strategist);
         delay = 600; // 10 mins
-        slippage = _slippage;
         timestampSource = _timestampSource;
 
         slippageLPs = [address(0x77CfeE25570b291b0882F68Bac770Abf512c2b5C), address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122)]; //Used to calculate slippage and get vaultProfit in usd which is displayed in UI.
@@ -258,9 +253,8 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     function _chargeFees(address caller) internal {                   
         uint equalBal = SafeTransferLib.balanceOf(equal, address(this));
         uint feeBal = equalBal * platformFee / FEE_DIVISOR;
-        uint minAmt = getSlippage(equalBal - feeBal, slippageLPs[1], equal);
         
-        uint64 usdProfit = uint64(IEqualizerPair(slippageLPs[0]).sample(wftm, minAmt, 1, 1)[0]);
+        uint64 usdProfit = uint64(IEqualizerPair(slippageLPs[0]).sample(wftm, equalBal - (equalBal * 1 / 100), 1, 1)[0]);
         vaultProfit = vaultProfit + usdProfit;
 
         uint callAmt = feeBal * callFee / FEE_DIVISOR;
@@ -279,7 +273,9 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     }
 
     function _distroToNfts() internal {
-        //uint equalbal = SafeTransferLib.balanceOf(equal, address(this));
+        uint equalbal = SafeTransferLib.balanceOf(equal, address(this));
+        accProfitTokenPerShare = accProfitTokenPerShare + ((equalbal * PROFIT_TOKEN_PER_SHARE_PRECISION) / totalSupply);
+        
         for(uint i = 0; i < totalQueue - 1;){
         if(depositorAddresses[i] == address(0)){continue;}
         UserInfo storage user = userInfo[depositorAddresses[i]];
@@ -349,8 +345,8 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     }
 
     //Returns current values for slippage and delay
-    function getSlippageGetDelay() external view returns (uint64 _slippage, uint64 buffer){
-        return (slippage, delay);
+    function getDelay() external view returns (uint64){
+        return (delay);
     }
 
     function pendingEarnings(address receiver) external view returns (uint) {
@@ -384,13 +380,6 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     function _timestamp() internal view returns (uint64 timestamp){
         uint64 lastBlock = uint64(IEqualizerPair(timestampSource).blockTimestampLast());
         timestamp = lastBlock + delay;
-    }
-
-    // Guards against sandwich/frontrunning
-    function getSlippage(uint _amount, address _lp, address _token) internal view returns(uint minAmt){
-        uint[] memory t1Amts = IEqualizerPair(_lp).sample(_token, _amount, 2, 1);
-        minAmt = (t1Amts[0] + t1Amts[1] ) >> 1;
-        minAmt = minAmt - (minAmt *  slippage / slippageDiv);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -439,13 +428,10 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         emit HarvestOnDepositSet(_harvestOnDeposit);
     } 
 
-    function setSlippageSetDelay(uint64 _slippage, uint64 _delay) external onlyAdmin{
+    function SetDelay(uint64 _delay) external onlyAdmin{
         if(_delay > 1800 || _delay < 600) {revert XpandrErrors.OverCap();}
-        if(_slippage > 5 || _slippage < 1){revert XpandrErrors.OverCap();}
-
         if(_delay != delay){delay = _delay;}
-        if(_slippage != slippage){slippage = _slippage;}
-        emit SetSlippageSetDelaySet(slippage, delay);
+        emit DelaySet(delay);
     }
 
     function setTimestampSource(address source) external onlyAdmin{
@@ -461,7 +447,7 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     This function exists for cases where a vault may receive sporadic 3rd party rewards such as airdrop from it's deposit in a farm.
     Enables converting that token into more of this vault's reward. */ 
     function customTx(address _token, uint _amount, IEqualizerRouter.Routes[] memory _path) external onlyOwner {
-        if(_token == equal || _token == wftm || _token == pEqual) {revert XpandrErrors.InvalidTokenOrPath();}
+        if(_token == equal || _token == wftm) {revert XpandrErrors.InvalidTokenOrPath();}
         uint bal;
         if(_amount == 0) {bal = SafeTransferLib.balanceOf(_token, address(this));}
         else {bal = _amount;}
@@ -474,7 +460,7 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
 
     //Rescues random funds stuck that the vault can't handle.
     function stuckTokens(address _token, uint _amount) external onlyAdmin {
-        if(ERC20(_token) == asset){revert XpandrErrors.InvalidTokenOrPath();}
+        if(ERC20(_token) == asset || _token == equal){revert XpandrErrors.InvalidTokenOrPath();}
         uint amount;
         if(_amount == 0){amount = SafeTransferLib.balanceOf(_token, address(this));}  else {amount = _amount;}
         emit StuckTokens(msg.sender, amount, _token);
@@ -483,17 +469,11 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
 
     function _subAllowance() internal {
         SafeTransferLib.safeApprove(address(asset), gauge, 0);
-        SafeTransferLib.safeApprove(equal, router, 0);
-        SafeTransferLib.safeApprove(pEqual, router, 0);
-        SafeTransferLib.safeApprove(equal, pEqual, 0);
         SafeTransferLib.safeApprove(equal, veEqual, 0);
     }
 
     function _addAllowance() internal {
         SafeTransferLib.safeApprove(address(asset), gauge, type(uint).max);
-        SafeTransferLib.safeApprove(equal, router, type(uint).max);
-        SafeTransferLib.safeApprove(pEqual, router, type(uint).max);
-        SafeTransferLib.safeApprove(equal, pEqual, type(uint).max);
         SafeTransferLib.safeApprove(equal, veEqual, type(uint).max);
     }
 

@@ -77,16 +77,17 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     uint64 internal delay;                                  // Part of deposit and harvest buffers
     uint256 internal constant PROFIT_TOKEN_PER_SHARE_PRECISION = 1e24;
     uint256 public accProfitTokenPerShare;
+
     struct UserInfo {
     uint rewardDebt;
     uint amount;
     uint nftId;
-    }
-                        
+    }         
+
     mapping(address => uint64) internal lastUserDeposit;    //Safeguard only allows same user deposits if > delay
-    mapping(address => UserInfo) public userInfo;   
-    mapping(address => bool) internal isDeposited;
-    mapping(address => uint) internal queuePosition;
+    mapping(address => UserInfo) public userInfo;           //Tracks depositor's rewardDebt, shareAmount, nftId
+    mapping(address => bool) internal isDeposited;          //Checks if new depositor to be added to Array or recurring depositor increasing shares 
+    mapping(address => uint) internal queuePosition;        //Counter for looping depositorAddresses to mitigate issues 
 
 
     constructor(
@@ -137,6 +138,7 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         if(!isDeposited[receiver]){
             isDeposited[receiver] = true;
             depositorAddresses.push(receiver);
+            queuePosition[receiver] = totalQueue;
             totalQueue = totalQueue + 1;
         }
 
@@ -217,10 +219,10 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
 
     function getUserPendingEarnings(address depositor) internal view returns (uint pending) {
-        uint userAmt = SafeTransferLib.balanceOf(address(this), depositor);
-        if (userAmt == 0 || accProfitTokenPerShare == 0) {return 0;}
+        uint userShareAmt = SafeTransferLib.balanceOf(address(this), depositor);
+        if (userShareAmt == 0 || accProfitTokenPerShare == 0) {return 0;}
         UserInfo storage user = userInfo[depositor];
-        pending = (userAmt * accProfitTokenPerShare) / PROFIT_TOKEN_PER_SHARE_PRECISION - user.rewardDebt;
+        pending = (userShareAmt * accProfitTokenPerShare) / PROFIT_TOKEN_PER_SHARE_PRECISION - user.rewardDebt;
     }
 
     // Deposits funds in the farm
@@ -243,7 +245,6 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         uint feeBal = equalBal * platformFee / FEE_DIVISOR;
         uint minAmt = IEqualizerPair(slippageLPs[1]).sample(equal, equalBal - feeBal, 1, 1)[0];
 
-    
         uint64 usdProfit = uint64(IEqualizerPair(slippageLPs[0]).sample(wftm, minAmt, 1, 1)[0]);
         vaultProfit = vaultProfit + usdProfit;
 

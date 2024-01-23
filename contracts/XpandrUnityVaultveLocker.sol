@@ -25,7 +25,7 @@ import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
 import {IEqualizerPair} from "./interfaces/IEqualizerPair.sol";
 import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
 import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
-import {IveEQUAL} from "./interfaces/IveEQUAL.sol";
+import {IveEqual} from "./interfaces/IveEqual.sol";
 
 // Equalizer EQUAL-pEQUAL veLocker//
 
@@ -37,7 +37,7 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     //////////////////////////////////////////////////////////////*/
     
     event Harvest(address indexed harvester);
-    event RouterSetGaugeSet(address indexed newRouter, address indexed newGauge);
+    event GaugeSet(address indexed newGauge);
     event Panic(address indexed caller);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
     event TimestampSourceSet(address indexed newTimestampSource);
@@ -241,8 +241,10 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     function _chargeFees(address caller) internal {                   
         uint equalBal = SafeTransferLib.balanceOf(equal, address(this));
         uint feeBal = equalBal * platformFee / FEE_DIVISOR;
-        
-        uint64 usdProfit = uint64(IEqualizerPair(slippageLPs[0]).sample(wftm, equalBal - (equalBal * 1 / 100), 1, 1)[0]);
+        uint minAmt = IEqualizerPair(slippageLPs[1]).sample(equal, equalBal - feeBal, 1, 1)[0];
+
+    
+        uint64 usdProfit = uint64(IEqualizerPair(slippageLPs[0]).sample(wftm, minAmt, 1, 1)[0]);
         vaultProfit = vaultProfit + usdProfit;
 
         uint callAmt = feeBal * callFee / FEE_DIVISOR;
@@ -272,7 +274,7 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         uint pending = getUserPendingEarnings(msg.sender);
         if (pending == 0) {continue;}
         user.rewardDebt = (user.amount * accProfitTokenPerShare) / PROFIT_TOKEN_PER_SHARE_PRECISION;
-        IveEQUAL(veEqual).deposit_for(user.nftId, user.rewardDebt);
+        IveEqual(veEqual).deposit_for(user.nftId, user.rewardDebt);
         unchecked {++i;}
         } 
     }
@@ -337,6 +339,7 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         return (delay);
     }
 
+    //Returns user based pending earnings
     function pendingEarnings(address receiver) external view returns (uint) {
         return getUserPendingEarnings(receiver);
     }
@@ -382,8 +385,10 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         accProfitTokenPerShare += ((_amount * PROFIT_TOKEN_PER_SHARE_PRECISION) / totalShares);
     }
 
+    //Assigns veNFT id to be linked with depositor's address.
     function assignNFT(uint id) external {
         if(id == 0){revert XpandrErrors.ZeroAmount();}
+        if(IveEqual(equal).ownerOf(id) == address(0)){revert XpandrErrors.ZeroAddress();}
         UserInfo storage user = userInfo[msg.sender];
         user.nftId = id;
     }
@@ -403,11 +408,10 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         emit SetFeesAndRecipient(withdrawFee, sum, feeRecipient);
     }
 
-    function setRouterSetGauge(address _router, address _gauge) external onlyOwner {
-        if(_router == address(0) || _gauge == address(0)){revert XpandrErrors.ZeroAddress();}
-        if(_router != router){router = _router;}
+    function setGauge(address _gauge) external onlyOwner {
+        if(_gauge == address(0)){revert XpandrErrors.ZeroAddress();}
         if(_gauge != gauge){gauge = _gauge;}
-        emit RouterSetGaugeSet(router, gauge);
+        emit GaugeSet(gauge);
     }
 
     function SetDelay(uint64 _delay) external onlyAdmin{
@@ -459,8 +463,7 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         SafeTransferLib.safeApprove(equal, veEqual, type(uint).max);
     }
 
-    //ERC4626 hook. Called by deposit if harvestOnDeposit = 2. 
-    //Uses "assets" arg to receive deposit timestamp instead. 2nd arg unused.
+    //ERC4626 hook. Unused in this build
     function afterDeposit(uint64 timestamp, uint shares) internal override {
       revert XpandrErrors.InvalidTokenOrPath();
     }

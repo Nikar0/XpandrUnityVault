@@ -71,11 +71,11 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     uint64 public recipientFee;
 
     // Controllers
-    uint256 totalQueue;
+    uint256 totalQueue;                                     //
     uint64 internal lastHarvest;                            // Safeguard only allows harvest being called if > delay
     uint64 internal vaultProfit;                            // Excludes performance fees
     uint64 internal delay;                                  // Part of deposit and harvest buffers
-    uint256 internal constant PROFIT_TOKEN_PER_SHARE_PRECISION = 1e24;
+    uint256 internal constant profitTokenPerSharePrecision = 1e24;
     uint256 public accProfitTokenPerShare;
 
     struct UserInfo {
@@ -125,7 +125,7 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     }
 
     // Deposit 'asset' into the vault which then deposits funds into the farm.  
-    function deposit(uint assets, address receiver) public override whenNotPaused returns (uint shares) {
+    function deposit(uint assets, address receiver) public nonReentrant override whenNotPaused returns (uint shares) {
         if(msg.sender != receiver){revert XpandrErrors.NotAccountOwner();}
         UserInfo storage user = userInfo[receiver];
         if(user.nftId == 0){revert XpandrErrors.ZeroAmount();}
@@ -149,7 +149,7 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
 
         uint userAmt = SafeTransferLib.balanceOf(address(this), msg.sender);
         user.amount = user.amount + shares;
-        user.rewardDebt = (userAmt * accProfitTokenPerShare) / PROFIT_TOKEN_PER_SHARE_PRECISION;
+        user.rewardDebt = (userAmt * accProfitTokenPerShare) / profitTokenPerSharePrecision;
 
         _earn();
     }
@@ -175,7 +175,7 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
             user.nftId = 0;
             user.amount = 0;
         } else {user.amount = user.amount - shares;}
-        user.rewardDebt = (userShareBal * accProfitTokenPerShare) / PROFIT_TOKEN_PER_SHARE_PRECISION;
+        user.rewardDebt = (userShareBal * accProfitTokenPerShare) / profitTokenPerSharePrecision;
 
         emit Withdraw(_owner, receiver, _owner, assets, shares);
         _collect(assets);
@@ -222,7 +222,7 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         uint userShareAmt = SafeTransferLib.balanceOf(address(this), depositor);
         if (userShareAmt == 0 || accProfitTokenPerShare == 0) {return 0;}
         UserInfo storage user = userInfo[depositor];
-        pending = (userShareAmt * accProfitTokenPerShare) / PROFIT_TOKEN_PER_SHARE_PRECISION - user.rewardDebt;
+        pending = (userShareAmt * accProfitTokenPerShare) / profitTokenPerSharePrecision - user.rewardDebt;
     }
 
     // Deposits funds in the farm
@@ -265,7 +265,7 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
 
     function _distroToNfts() internal {
         uint equalbal = SafeTransferLib.balanceOf(equal, address(this));
-        accProfitTokenPerShare = accProfitTokenPerShare + ((equalbal * PROFIT_TOKEN_PER_SHARE_PRECISION) / totalSupply);
+        accProfitTokenPerShare = accProfitTokenPerShare + ((equalbal * profitTokenPerSharePrecision) / totalSupply);
         
         for(uint i = 0; i < totalQueue - 1;){
         if(depositorAddresses[i] == address(0)){continue;}
@@ -274,7 +274,7 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
         if(user.nftId == 0){continue;}
         uint pending = getUserPendingEarnings(msg.sender);
         if (pending == 0) {continue;}
-        user.rewardDebt = (user.amount * accProfitTokenPerShare) / PROFIT_TOKEN_PER_SHARE_PRECISION;
+        user.rewardDebt = (user.amount * accProfitTokenPerShare) / profitTokenPerSharePrecision;
         IveEqual(veEqual).deposit_for(user.nftId, user.rewardDebt);
         unchecked {++i;}
         } 
@@ -377,14 +377,6 @@ contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
     /*//////////////////////////////////////////////////////////////
                                SETTERS
     //////////////////////////////////////////////////////////////*/
-
-    function setProfitTokenPerShare(uint256 _amount) internal {
-        uint256 totalShares = totalSupply;
-        if (totalShares == 0) {
-        return;
-        }
-        accProfitTokenPerShare += ((_amount * PROFIT_TOKEN_PER_SHARE_PRECISION) / totalShares);
-    }
 
     //Assigns veNFT id to be linked with depositor's address.
     function assignNFT(uint id) external {

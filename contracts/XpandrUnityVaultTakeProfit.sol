@@ -41,7 +41,7 @@ import {IveEqual} from "./interfaces/IveEqual.sol";
 
 // Equalizer EQUAL-FTM Take Profit //
 
-contract XpandrUnityVaultveLocker is ERC4626, AccessControl, Pauser {
+contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
     using FixedPointMathLib for uint;
 
     /*//////////////////////////////////////////////////////////////

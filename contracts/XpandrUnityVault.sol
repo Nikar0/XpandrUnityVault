@@ -59,8 +59,8 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
     address internal constant wftm = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
     address internal constant equal = address(0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6);
     address internal constant pEqual = address(0xf773E8590A7411154E590a6D1E2648497c60ae6F);
-    address[] internal rewardTokens;
-    address[2] internal slippageLPs;
+    address[] internal rewardTokens; 
+    address[2] internal slippageLPs;                         //Calc slippage & vaultProfit  
 
     // 3rd party contracts
     address public gauge;
@@ -110,7 +110,7 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         slippage = _slippage;
         timestampSource = _timestampSource;
 
-        slippageLPs = [address(0x77CfeE25570b291b0882F68Bac770Abf512c2b5C), address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122)]; //Used to calculate slippage and get vaultProfit in usd which is displayed in UI.
+        slippageLPs = [address(0x77CfeE25570b291b0882F68Bac770Abf512c2b5C), address(0x3d6c56f6855b7Cc746fb80848755B0a9c3770122)];
         rewardTokens.push(equal);
         lastHarvest = uint64(block.timestamp);
         _addAllowance();
@@ -433,7 +433,6 @@ contract XpandrUnityVault is ERC4626, AccessControl, Pauser {
         if(timestamp > lastHarvest + delay){
         lastHarvest = timestamp;
         _harvest(tx.origin);
-        }
-        
+        }  
     }
 }

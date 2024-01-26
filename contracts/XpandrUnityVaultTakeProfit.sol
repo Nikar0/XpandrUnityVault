@@ -71,7 +71,6 @@ contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
     // 3rd party contracts
     address public gauge;
     address public router;
-    IEqualizerRouter.Routes[] public equalToUsdcPath;
     address internal timestampSource;                         // Used as timestamp source for deadlines.
 
     // Xpandr addresses
@@ -109,7 +108,6 @@ contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
         address _gauge,
         address _router,
         address _timestampSource,
-        IEqualizerRouter.Routes[] memory _equalToUsdcPath,
         address _strategist
         )
        ERC4626(
@@ -124,10 +122,6 @@ contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
         emit SetStrategist(address(0), strategist);
         delay = 600; // 10 mins
         timestampSource = _timestampSource;
-        
-        for (uint i; i < _equalToUsdcPath.length; ++i) {
-            equalToUsdcPath.push(_equalToUsdcPath[i]);
-        }
         
         slippageLP = address(0x77CfeE25570b291b0882F68Bac770Abf512c2b5C);
         rewardTokens.push(equal);
@@ -179,9 +173,6 @@ contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
 
         _burn(_owner, shares);
         user.amount = user.amount - shares;
-        //uint userShareBal = SafeTransferLib.balanceOf(address(this), _owner);
-        //if(userShareBal == 0){user.amount = 0;}
-        //else {user.amount = user.amount - shares;}
         user.rewardDebt = (user.amount * accProfitTokenPerShare) / profitTokenPerSharePrecision;
 
         emit Withdraw(_owner, receiver, _owner, assets, shares);
@@ -221,7 +212,8 @@ contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
         }
     }
 
-    function withdrawProfit() external {
+    //Withdraw user accrued usdc
+    function withdrawProfit() external nonReentrant {
         UserInfo storage user = userInfo[msg.sender];
         uint useShareAmt = SafeTransferLib.balanceOf(address(this), msg.sender);
         if (useShareAmt == 0) {revert XpandrErrors.ZeroAmount();}
@@ -235,7 +227,9 @@ contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
         }
     }
 
+    //Harvests vault and re-invests user earnings into the LP.
     function reinvest() external nonReentrant {
+        _harvest(tx.origin);
         uint userShareAmt = SafeTransferLib.balanceOf(address(this), msg.sender);
         if (userShareAmt == 0) {revert XpandrErrors.ZeroAmount();}
         UserInfo storage user = userInfo[msg.sender];
@@ -243,7 +237,7 @@ contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
 
         if (pendingBal != 0) {
            user.rewardDebt = (userShareAmt * accProfitTokenPerShare) / profitTokenPerSharePrecision;
-           uint timestamp = _timestamp();
+           uint64 timestamp = _timestamp();
 
            uint minAmtWftm = getSlippage(pendingBal, slippageLP, axlUsdc);
            IEqualizerRouter(router).swapExactTokensForTokensSimple(pendingBal, minAmtWftm, axlUsdc, wftm, false, address(this), timestamp);
@@ -301,9 +295,11 @@ contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
     function _takeFeesTakeProfit(address caller) internal {     
         uint profitPool = SafeTransferLib.balanceOf(axlUsdc, address(this));              
         uint equalBal = SafeTransferLib.balanceOf(equal, address(this));
-        uint minAmtWftm = getSlippage(equalBal, address(this), equal);
-        uint minAmtUsdc = getSlippage(minAmtWftm, address(this), wftm);
-        IEqualizerRouter(router).swapExactTokensForTokens(equalBal, minAmtUsdc, equalToUsdcPath, address(this), lastHarvest);
+        uint minAmtWftm = getSlippage(equalBal, address(asset), equal);
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(equalBal, 1, equal, wftm, false, address(this), lastHarvest);
+        uint wftmBal = SafeTransferLib.balanceOf(wftm, address(this));
+        uint minAmtUsdc = getSlippage(wftmBal, slippageLP, wftm);
+        IEqualizerRouter(router).swapExactTokensForTokensSimple(wftmBal, 1, wftm, axlUsdc, false, address(this), lastHarvest);
 
         uint yield = SafeTransferLib.balanceOf(axlUsdc, address(this)) - profitPool;
         uint feeBal = yield * platformFee / FEE_DIVISOR;
@@ -382,8 +378,8 @@ contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
     }
 
     //Returns current values for slippage and delay
-    function getDelay() external view returns (uint64){
-        return (delay);
+    function getSlippageGetDelay() external view returns (uint64 _slippage, uint64 buffer){
+        return (slippage, delay);
     }
 
     //Returns user based pending earnings
@@ -454,7 +450,7 @@ contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
         emit RouterSetGaugeSet(router, gauge);
     }
 
-    function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
+    function setHarvestOnDeposit(uint64 _harvestOnDeposit) external onlyAdmin {
         if(_harvestOnDeposit != 0 && _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
     } 

@@ -215,8 +215,7 @@ contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
     //Withdraw user accrued usdc
     function withdrawProfit() external nonReentrant {
         UserInfo storage user = userInfo[msg.sender];
-        uint useShareAmt = SafeTransferLib.balanceOf(address(this), msg.sender);
-        if (useShareAmt == 0) {revert XpandrErrors.ZeroAmount();}
+        if (user.amount == 0) {revert XpandrErrors.ZeroAmount();}
 
         uint pending = _getUserPendingEarnings(msg.sender);
         if (pending != 0) {
@@ -230,13 +229,12 @@ contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
     //Harvests vault and re-invests user earnings into the LP.
     function reinvest() external nonReentrant {
         _harvest(tx.origin);
-        uint userShareAmt = SafeTransferLib.balanceOf(address(this), msg.sender);
-        if (userShareAmt == 0) {revert XpandrErrors.ZeroAmount();}
         UserInfo storage user = userInfo[msg.sender];
+        if (user.amount == 0) {revert XpandrErrors.ZeroAmount();}
         uint pendingBal = _getUserPendingEarnings(msg.sender);
 
         if (pendingBal != 0) {
-           user.rewardDebt = (userShareAmt * accProfitTokenPerShare) / profitTokenPerSharePrecision;
+           user.rewardDebt = (user.amount * accProfitTokenPerShare) / profitTokenPerSharePrecision;
            uint64 timestamp = _timestamp();
 
            uint minAmtWftm = getSlippage(pendingBal, slippageLP, axlUsdc);
@@ -269,11 +267,10 @@ contract XpandrUnityVaultTakeProfit is ERC4626, AccessControl, Pauser {
     }
 
     function _setProfitTokenPerShare() internal {
-        uint256 totalShares = totalSupply;
-        if (totalShares == 0) {
+        if (totalSupply == 0) {
         return;
         }
-        accProfitTokenPerShare += ((float * profitTokenPerSharePrecision) / totalShares);
+        accProfitTokenPerShare += ((float * profitTokenPerSharePrecision) / totalSupply);
         float = 0;
     }
     

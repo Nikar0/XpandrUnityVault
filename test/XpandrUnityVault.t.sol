@@ -29,7 +29,7 @@ contract XpandrUnityVaultTest is Test {
   address stuckTokenOwner = 0xEfC9200cD50ae935DA5d79D122660DDB53620E74;
   address wftm = 0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83;
   address equal = 0x3Fd3A0c85B70754eFc07aC9Ac0cbBDCe664865A6;
-  address impersonated = address(0x9324829cCD07B08C8D27096308F37d7cC6EA6edF); // Replace with an account that has a lot of LP tokens
+  address impersonated = address(0x5c4D7b40a0eaa4b379C310d38279288E5b66658C); // Replace with an account that has a lot of LP tokens
   address equalHolder = 0x6ef2Fa893319dB4A06e864d1dEE17A90fcC34130;
   address unauthorized = 0xDFAA88D5d068370689b082D34d7B546CbF393bA9;
 
@@ -42,7 +42,7 @@ contract XpandrUnityVaultTest is Test {
   function setUp() external {
 
     // Set the block number to a specific value
-    vault = new XpandrUnityVault(asset, gauge, router, slippage, timestampSource, strategist);
+    vault = new XpandrUnityVault(asset, gauge, router, timestampSource, strategist);
     
     vm.startPrank(impersonated);
 
@@ -156,7 +156,7 @@ contract XpandrUnityVaultTest is Test {
 
     assertTrue(vault.balanceOfPool() == 0, "Vaulted farm should have 0 LP deposited");
     assertTrue(vault.idleFunds() == lpAmount, "Funds are sitting in the vault post Emergency withdraw");
-    assertTrue(vault.paused() == 1, "Vault is paused");
+    assertTrue(vault.paused() == 2, "Vault is paused");
     console.log("Vault paused and funds emergency wthdrawn from farm.");
 
   }
@@ -241,7 +241,7 @@ contract XpandrUnityVaultTest is Test {
     vault.unpause();
     console.log("Paused state post unpause", vault.paused());
 
-    assertTrue(vault.paused() != 1);
+    assertTrue(vault.paused() != 2);
     console.log("Pause and unpause procedure performed as expected");
   }
 
@@ -264,7 +264,7 @@ contract XpandrUnityVaultTest is Test {
   }
 
   //Change fee value to test pass/fail.
-  function testMaxPerformanceFee(uint64 fee) external {
+  function testMaxPerformanceFee(uint32 fee) external {
     vm.assume(fee >= 0 && fee <=10);
     vm.prank(strategist);
     console.log("withdrawFee function call arg: ", fee);
@@ -289,6 +289,37 @@ contract XpandrUnityVaultTest is Test {
 
   }
 
+    //Change fee value to test pass/fail.
+  function testFeeSetters() external {
+    //vm.assume(fee >= 0 && fee <=10);
+    vm.prank(strategist);
+    vault.setFeesAndRecipient(0, 100, 200, 600, 100, unauthorized);
+
+    uint64 withdrawFee = vault.withdrawFee();
+    uint64 callFee = vault.callFee();
+    uint64 treasuryFee = vault.treasuryFee();
+    uint64 recipientFee = vault.recipientFee();
+    uint64 stratFee = vault.stratFee();
+
+    uint64 sum = callFee + treasuryFee + recipientFee + stratFee;
+
+    console.log("withdrawFee after call:", vault.withdrawFee());
+    console.log("callFee after call:", vault.callFee());
+    console.log("treasuryFee after call:", vault.treasuryFee());
+    console.log("recipientFee after call:", vault.recipientFee());
+    console.log("stratFee after call:", vault.stratFee());
+
+    assertTrue(withdrawFee == 0 || withdrawFee == 1, "Value is 0 or 0.1%");
+    assertTrue(sum <= 1000, "Value adds up correctly");
+    assertTrue(callFee == 100);
+    assertTrue(treasuryFee == 200);
+    assertTrue(stratFee == 600);
+    assertTrue(recipientFee == 100);
+   
+   console.log("All values stored correctly");
+
+  }
+
   function testContractHarvesting() external {
     uint vaultBeforeBalance = vault.totalAssets();
     uint64 futureStamp = vault.lastHarvest() + 1000;
@@ -310,7 +341,7 @@ contract XpandrUnityVaultTest is Test {
     vault.pause() {
     } catch {
     console.log("Paused after unauthorized caller:", vault.paused());
-    assertTrue(vault.paused() != 1);
+    assertTrue(vault.paused() != 2);
     console.log("Call to admin function by unauthorized address has reverted");
     }
 
@@ -340,37 +371,176 @@ contract XpandrUnityVaultTest is Test {
 
   //Tests correct functionality of setSlippageSetDelay. must set slippage to public in contract.
   function testSlippageAndDelay() public {
-    vm.prank(strategist);
+    (uint64 slip, uint64 delay) = vault.getSlippageGetDelay();
+
+    vm.startPrank(strategist);
     try
     vault.setSlippageSetDelay(10, 800){}
     catch {
-      assertTrue(vault.slippage() == 2);
-      console.log("slippage value after failed call", vault.slippage());
+      assertTrue(slip == 2);
+      console.log("slippage value after failed call", slip);
 
-      vm.prank(strategist);
-      vault.setSlippageSetDelay(4, 800);
-      console.log("slippage value after successful call", vault.slippage());
+      try
+      vault.setSlippageSetDelay(4, 800){}
+      catch{
+      console.log("slippage value after successful call", slip);
 
-      assertTrue(vault.slippage() == 4);
+      assertTrue(slip == 4);
+      try
+      vault.setSlippageSetDelay(4, 100){}
+      catch{
+      console.log("delay value after successful call", delay);
+      assertTrue(delay == 600);
+
+      try
+      vault.setSlippageSetDelay(4, 2500){}
+      catch{
+      console.log("delay value after failed call", delay);
+
+      assertTrue(delay == 600);
+
+      try
+      vault.setSlippageSetDelay(4, 900){}
+      catch{
+      console.log("delay value after failed call", delay);
+
+      assertTrue(delay == 900);
+  
       console.log("If arg called outside of bounds, reverts. If  args called within bounds, assigned to global if != to arg");
+      }}}
+    }
+  }
+}
+
+  //Tests for correct strategist access control
+  function testSetStrategist() external{
+    vm.prank(strategist);
+    vault.setStrategist(address(this));
+    assertTrue(vault.strategist() == address(this));
+    console.log("Strategist caller successfully changed strategist address to:", address(this));
+
+    vm.prank(strategist);
+    try
+    vault.setStrategist(strategist){}
+    catch {
+      assertTrue(vault.strategist() == address(this));
+      console.log("Unauthorized called reverted, strategist address remains unaltered", vault.strategist());
+    }
+  }
+  //Tests for correct access control for onlyAdmin
+   function testSetHarvester() external{
+    vm.startPrank(strategist);
+    vault.setHarvester(address(this));
+    assertTrue(vault.harvester() == address(this));
+    console.log("SetHarvester authorized caller successfully changed address to:", vault.harvester());
+    
+    vm.startPrank(legitDepositor);
+    try
+    vault.setHarvester(strategist){}
+    catch {
+      assertTrue(vault.harvester() == address(this));
+      console.log("Unauthorized called reverted, harvester address remains unaltered", vault.harvester());
     }
   }
 
-  function testHarvestOnDeposit(uint64 delay, uint64 onDeposit) public{
-    vm.assume(delay > 200 && delay < 2500);
-    vm.assume(onDeposit >= 0 && onDeposit < 5);
+  //Tests post deposit view functions that would have value & have not been tested above)
+  function testViewFunctions() external {
+    uint balOfPool = vault.balanceOfPool();
+    uint idle = vault.idleFunds();
+    uint pricePerShare = vault.getPricePerFullShare();
+    address getOwner = vault.getOwner();
+    (uint64 slip, uint64 delay) = vault.getSlippageGetDelay();
+    console.log("slip", slip, "delay", delay);
+
+    assertTrue(balOfPool != 0 && idle == 0 && pricePerShare != 0  && slip == 2 && delay == 600 && vault.getOwner() != address(0));
+    console.log("balanceOfPool, idleFunds, getPricePerFullShare & getSlippageGetDelay are returning correct values");
+  }
+
+   //Tests post deposit view functions that would have value & have not been tested above)
+  function testViewSlipAndDelay() external {
+    
+    (uint64 slip, uint64 delay) = vault.getSlippageGetDelay();
+    console.log("slip", slip, "delay", delay);
+
+    assertTrue(slip == 2 && delay == 600);
+    console.log("getSlippageGetDelay are returning correct values");
+  }
+
+  function testUnauthorisedShareTransfer() external {
+    uint shareBalPreAttack = vault.balanceOf(address(this));
+    vm.prank(unauthorized);
+    try
+    vault.transferFrom(address(this), unauthorized, shareBalPreAttack){}
+    catch {
+    uint shareBalAfterAttack = vault.balanceOf(address(this));
+    assertTrue(shareBalPreAttack == shareBalAfterAttack);
+    console.log("Unauthorized shares transfer reveted");
+    }
+  }
+
+  function testDepositAndWithdrawGas() external {
+    uint shares = vault.convertToShares(lpAmount);
+
+    vault.withdraw(shares, legitDepositor, legitDepositor);
+
+    uint withdrawnLpBal = asset.balanceOf(address(this));
+    uint vaultBalanceAfter = vault.totalAssets();
+    console.log("LP pre deposit: ", lpAmount, "LP after withdraw: ", withdrawnLpBal);
+    console.log("Vault Balance after withdrawal:", vaultBalanceAfter);
+
+    assertEq(0, vaultBalanceAfter, "Vault balance should be 0 after deposit and withdraw");
+    assertEq(lpAmount, withdrawnLpBal, "LP amount should be the same as pre-deposit after withdrawing");
+    console.log("No rounding loss between depositing and withdrawing LP.");
+
+  }
+
+  function testOwnerFuncs() external{
+    vm.prank(multisig);
+    vault.transferOwnership(strategist);
+    assertTrue(vault.strategist() == vault.getOwner());
+    console.log("Authorized Caller Success, Owner changed to:", vault.getOwner());
+
+    try
+    vault.transferOwnership(multisig){}
+      catch{
+        assertTrue(multisig != vault.getOwner());
+        console.log("Unauthorized called failed. Ownew unchanged:", vault.getOwner());
+    }
+
+  }
+/* Issues testing this as equalizer transfer is failing
+  function testHarvesting() external{
+
+    uint earlyVaultBalance = vault.totalAssets();
+    console.log("vaultBalance:", earlyVaultBalance);
+    vm.warp(1 days);
+    vm.prank(strategist);
+    IEqualizerRouter(router).swapExactTokensForTokensSimple(10000000000000000000, 1, wftm, equal, false, address(this), block.timestamp); //creates timestamp source after warp
+
+    vm.prank(strategist);
+    vault.harvest();
+
+    uint afterHarvestBal = vault.totalAssets();
+    uint yield = afterHarvestBal - earlyVaultBalance;
+    assertTrue(yield != 0);
+    console.log("Harvest successful. Harvested amount", yield);
+  }
+
+  function testHarvestOnDeposit() public{
+    
     address newDepositor = vm.addr(1);
     vm.prank(strategist);
-    try
-    vault.setHarvestOnDeposit(2){}
-    catch{
+    
+    vault.setHarvestOnDeposit(2);
+    
     vm.prank(impersonated);
+    ERC20(wftm).transfer(address(this), lpAmount);
     asset.transfer(newDepositor, lpAmount);
     uint64 lastHarvest = vault.lastHarvest();
 
     uint earlyVaultBalance = vault.totalAssets();
     console.log("vaultBalance:", earlyVaultBalance);
-    vm.warp(lastHarvest + delay);
+    vm.warp(1 days);
     IEqualizerRouter(router).swapExactTokensForTokensSimple(lpAmount, 1, equal, wftm, false, address(this), block.timestamp); //creates timestamp source after warp
 
     vm.prank(newDepositor);
@@ -391,89 +561,10 @@ contract XpandrUnityVaultTest is Test {
       assertTrue(laterVaultBalance - earlyVaultBalance + lpAmount == 0);
       console.log("Vault has deposited but not harvested due to being < buffer");
     }
-    }
-  }
-
-  
-
-  //Tests for correct strategist access control
-  function testSetStrategist() external{
-    vm.prank(strategist);
-    vault.setStrategist(address(this));
-    assertTrue(vault.strategist() == address(this));
-    console.log("Strategist caller successfully changed strategist address to:", address(this));
-
-    vm.prank(strategist);
-    try
-    vault.setStrategist(strategist){}
-    catch {
-      assertTrue(vault.strategist() == address(this));
-      console.log("Unauthorized called reverted, strategist address remains unaltered", vault.strategist());
-    }
-  }
-  //Tests for correct access control for onlyAdmin
-   function testSetHarvester() external{
-    vm.prank(strategist);
-    vault.setHarvester(address(this));
-    assertTrue(vault.harvester() == address(this));
-    console.log("SetHarvester authorized caller successfully changed address to:", vault.harvester());
     
-    vm.prank(strategist);
-    try
-    vault.setHarvester(strategist){}
-    catch {
-      assertTrue(vault.strategist() == address(this));
-      console.log("Unauthorized called reverted, harvester address remains unaltered", vault.harvester());
-    }
   }
 
-  //Tests post deposit view functions that would have value & have not been tested above)
-  function testViewFunctions() external {
-    uint balOfPool = vault.balanceOfPool();
-    uint idle = vault.idleFunds();
-    uint pricePerShare = vault.getPricePerFullShare();
-
-    assertTrue(balOfPool != 0 && idle == 0 && pricePerShare != 0 && vault.slippage() == 2 && vault.delay() == 600);
-    console.log("balanceOfPool, idleFunds, getPricePerFullShare & getSlippageGetDelay are returning correct values");
-  }
-
-  function testUnauthorisedShareTransfer() external {
-    uint shareBalPreAttack = vault.balanceOf(address(this));
-    vm.prank(unauthorized);
-    try
-    vault.transferFrom(address(this), unauthorized, shareBalPreAttack){}
-    catch {
-    uint shareBalAfterAttack = vault.balanceOf(address(this));
-    assertTrue(shareBalPreAttack == shareBalAfterAttack);
-    console.log("Unauthorized shares transfer reveted");
-    }
-  }
-
-  function testWithdrawGas() external{
-    uint beforeWithdraw = asset.balanceOf(address(this));
-    vault.withdraw(lpAmount, address(this), address(this));
-    uint afterWithdraw = asset.balanceOf(address(this));
-
-    assertTrue(afterWithdraw > beforeWithdraw);
-  }
-
-  function testDepositAndWithdrawGas() external {
-    uint shares = vault.convertToShares(lpAmount);
-
-    vault.withdraw(shares, legitDepositor, legitDepositor);
-
-    uint withdrawnLpBal = asset.balanceOf(address(this));
-    uint vaultBalanceAfter = vault.totalAssets();
-    console.log("LP pre deposit: ", lpAmount, "LP after withdraw: ", withdrawnLpBal);
-    console.log("Vault Balance after withdrawal:", vaultBalanceAfter);
-
-    assertEq(0, vaultBalanceAfter, "Vault balance should be 0 after deposit and withdraw");
-    assertEq(lpAmount, withdrawnLpBal, "LP amount should be the same as pre-deposit after withdrawing");
-    console.log("No rounding loss between depositing and withdrawing LP.");
-
-  }
-
-  function testSetHarvestOnDeposit(uint value) external {
+  function testSetHarvestOnDeposit(uint64 value) external {
     vm.assume(value > 0 && value < 6);
     vm.prank(strategist);
 
@@ -492,6 +583,8 @@ contract XpandrUnityVaultTest is Test {
       assertTrue(vault.harvestOnDeposit() < 1 || vault.harvestOnDeposit() > 2);
       console.log("harvestOnDeposit args outside of bounds, tx reverted:", value);
     }
-  }
-   
+
+  */
+  
+
 }

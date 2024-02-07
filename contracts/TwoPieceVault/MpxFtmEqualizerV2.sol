@@ -19,14 +19,14 @@ Special thanks to 543 from Equalizer/Guru_Network for the brainstorming & QA
 
 pragma solidity ^0.8.19;
 
-import {Pauser} from "./interfaces/Pauser.sol";
-import {ERC20} from "./interfaces/solmate/ERC20.sol";
-import {SafeTransferLib} from "./interfaces/solady/SafeTransferLib.sol";
-import {AccessControl} from "./interfaces/AccessControl.sol";
-import {IEqualizerPair} from "./interfaces/IEqualizerPair.sol";
-import {IEqualizerRouter} from "./interfaces/IEqualizerRouter.sol";
-import {IEqualizerGauge} from "./interfaces/IEqualizerGauge.sol";
-import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
+import {Pauser} from "../interfaces/Pauser.sol";
+import {ERC20} from "../interfaces/solmate/ERC20.sol";
+import {SafeTransferLib} from "../interfaces/solady/SafeTransferLib.sol";
+import {AccessControl} from "../interfaces/AccessControl.sol";
+import {IEqualizerPair} from "../interfaces/IEqualizerPair.sol";
+import {IEqualizerRouter} from "../interfaces/IEqualizerRouter.sol";
+import {IEqualizerGauge} from "../interfaces/IEqualizerGauge.sol";
+import {XpandrErrors} from "../interfaces/XpandrErrors.sol";
 
 contract MpxFtmEqualizerV2 is AccessControl, Pauser {
    
@@ -39,7 +39,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     event RouterSetGaugeSet(address indexed router, address indexed gauge);
     event SetFeesAndRecipient(uint64 withdrawFee, uint64 totalFees, address indexed newRecipient);
     event SlippageSetDelaySet(uint8 slippage, uint64 delay);
-    event HarvestOnDepositSet(uint8 harvestOnDeposit);
+    event HarvestOnDepositSet(uint64 harvestOnDeposit);
     event RemoveStrat(address indexed caller);
     event Panic(address indexed caller);
     event CustomTx(address indexed from, uint indexed amount);
@@ -74,7 +74,6 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
     uint64 internal lastHarvest;
     uint64 internal harvestProfit;
     uint64 internal delay;
-    uint8 internal harvestOnDeposit;
     uint8 internal slippage;
     uint8 internal constant slippageDiv = 100;
 
@@ -309,7 +308,7 @@ contract MpxFtmEqualizerV2 is AccessControl, Pauser {
         emit RouterSetGaugeSet(router, gauge);
     }
 
-    function setHarvestOnDeposit(uint8 _harvestOnDeposit) external onlyAdmin {
+    function setHarvestOnDeposit(uint64 _harvestOnDeposit) external onlyAdmin {
         if(_harvestOnDeposit != 0 || _harvestOnDeposit != 1){revert XpandrErrors.OverCap();}
         harvestOnDeposit = _harvestOnDeposit;
         emit HarvestOnDepositSet(harvestOnDeposit);

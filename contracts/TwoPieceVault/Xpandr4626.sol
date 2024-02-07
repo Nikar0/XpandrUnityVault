@@ -23,12 +23,12 @@ Special thanks to 543 from Equalizer/Guru_Network for the brainstorming & QA
 
 pragma solidity ^0.8.19;
 
-import {ERC20, ERC4626, FixedPointMathLib} from "./interfaces/solmate/ERC4626light.sol";
-import {SafeTransferLib} from "./interfaces/solady/SafeTransferLib.sol";
-import {IEqualizerPair} from "./interfaces/IEqualizerPair.sol";
-import {XpandrErrors} from "./interfaces/XpandrErrors.sol";
-import {AccessControl} from "./interfaces/AccessControl.sol";
-import {IStrategy} from "./interfaces/IStrategy.sol";
+import {ERC20, ERC4626, FixedPointMathLib} from "../interfaces/solmate/ERC4626light.sol";
+import {SafeTransferLib} from "../interfaces/solady/SafeTransferLib.sol";
+import {IEqualizerPair} from "../interfaces/IEqualizerPair.sol";
+import {XpandrErrors} from "../interfaces/XpandrErrors.sol";
+import {AccessControl} from "../interfaces/AccessControl.sol";
+import {IStrategy} from "../interfaces/IStrategy.sol";
 
 /**
 Implementation of a vault to deposit funds for yield optimizing

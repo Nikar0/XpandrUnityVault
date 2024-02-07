@@ -4,24 +4,15 @@
 /** 
 @title  - XpandrUnityVaultYul
 @author - Nikar0 
-@notice - Immutable, streamlined, security & gas considerate unified Vault + Strategy contract.
+@notice - Immutable, streamlined, security & even more gas considerate unified Vault + Strategy contract.
           Includes: 0% withdraw fee default / Vault profit in USD / Deposit & harvest buffers / Timestamp & Slippage protection
+          Yul Optimized
 
 https://www.github.com/nikar0/Xpandr4626  @Nikar0_
 
 
-Vault based on EIP-4626 by @joey_santoro, @transmissions11, et all.
-https://eips.ethereum.org/EIPS/eip-4626
-
-Using solmate libs for ERC20, ERC4626
-https://github.com/transmissions11/solmate
-
-Using solady SafeTransferLib
-https://github.com/Vectorized/solady/
-
-
-@notice - AccessControl = modified OZ Ownable.sol v4 w/ added onlyAdmin and harvesters modifiers + error codes.
-        - Pauser = modified OZ Pausable.sol using uint8 instead of bool + error codes.
+@notice - AccessControl = modified OZ Ownable.sol v4 w/ added onlyAdmin and harvesters modifiers + Yul
+        - Pauser = modified OZ Pausable.sol v4 using uint instead of bool + Yul
 **/
 
 pragma solidity 0.8.19;
